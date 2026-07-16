@@ -1,7 +1,20 @@
-const { contextBridge, ipcRenderer } = require("electron");
+const { contextBridge, ipcRenderer, webUtils } = require("electron");
 
 contextBridge.exposeInMainWorld("api", {
   isDesktop: true,
+
+  /** Sürükle-bırak File nesnesinden gerçek disk yolu (Electron) */
+  pathForFile: (file) => {
+    try {
+      if (!file) return "";
+      if (typeof webUtils?.getPathForFile === "function") {
+        return webUtils.getPathForFile(file) || "";
+      }
+      return file.path || "";
+    } catch {
+      return file?.path || "";
+    }
+  },
 
   cloudConfig: () => ipcRenderer.invoke("cloud-config"),
 

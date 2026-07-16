@@ -256,31 +256,144 @@
         cloudId: f.id,
         lastSeen: f.last_seen,
         addedAt: Date.now(),
+        friendshipStatus: "accepted",
       };
     });
   }
 
+  /** Gelen istekler: friend_id = ben, status = pending */
+  async function listIncomingFriendRequests() {
+    if (!STATE.session) return [];
+    const uid = STATE.session.user.id;
+    const { data, error } = await STATE.client
+      .from("friendships")
+      .select("id, status, created_at, requester:user_id(id, username, display_name, avatar_url)")
+      .eq("friend_id", uid)
+      .eq("status", "pending");
+    if (error) throw error;
+    return (data || []).map((row) => {
+      const r = row.requester || {};
+      return {
+        requestId: row.id,
+        username: r.username,
+        displayName: r.display_name || r.username,
+        cloudId: r.id,
+        avatarUrl: r.avatar_url,
+        createdAt: row.created_at,
+      };
+    });
+  }
+
+  /** Giden istekler */
+  async function listOutgoingFriendRequests() {
+    if (!STATE.session) return [];
+    const uid = STATE.session.user.id;
+    const { data, error } = await STATE.client
+      .from("friendships")
+      .select("id, status, friend:friend_id(id, username, display_name)")
+      .eq("user_id", uid)
+      .eq("status", "pending");
+    if (error) throw error;
+    return (data || []).map((row) => ({
+      requestId: row.id,
+      username: row.friend?.username,
+      displayName: row.friend?.display_name || row.friend?.username,
+      cloudId: row.friend?.id,
+    }));
+  }
+
+  /** Arkadaşlık isteği gönder (hemen eklemez) */
   async function addFriendByUsername(username) {
     const profile = await findByUsername(username);
     if (!profile) throw new Error("Kullanıcı bulunamadı (bulutta kayıtlı olmalı).");
     if (profile.id === STATE.session.user.id) throw new Error("Kendini ekleyemezsin.");
     const uid = STATE.session.user.id;
-    // çift yönlü accepted (basit model: hemen arkadaş)
+
+    // Zaten arkadaş mı?
+    const { data: existing } = await STATE.client
+      .from("friendships")
+      .select("id, status")
+      .eq("user_id", uid)
+      .eq("friend_id", profile.id)
+      .maybeSingle();
+    if (existing?.status === "accepted") throw new Error("Zaten arkadaşsınız.");
+    if (existing?.status === "pending") throw new Error("İstek zaten gönderildi.");
+
+    // Karşı taraf bana istek atmışsa → otomatik kabul
+    const { data: reverse } = await STATE.client
+      .from("friendships")
+      .select("id, status")
+      .eq("user_id", profile.id)
+      .eq("friend_id", uid)
+      .maybeSingle();
+    if (reverse?.status === "pending") {
+      await respondFriendRequest(profile.username, true);
+      return {
+        username: profile.username,
+        displayName: profile.display_name || profile.username,
+        cloudId: profile.id,
+        addedAt: Date.now(),
+        autoAccepted: true,
+      };
+    }
+
     const { error: e1 } = await STATE.client.from("friendships").upsert(
-      { user_id: uid, friend_id: profile.id, status: "accepted" },
+      { user_id: uid, friend_id: profile.id, status: "pending" },
       { onConflict: "user_id,friend_id" }
     );
     if (e1) throw e1;
-    await STATE.client.from("friendships").upsert(
-      { user_id: profile.id, friend_id: uid, status: "accepted" },
-      { onConflict: "user_id,friend_id" }
-    );
     return {
       username: profile.username,
       displayName: profile.display_name || profile.username,
       cloudId: profile.id,
+      pending: true,
       addedAt: Date.now(),
     };
+  }
+
+  async function respondFriendRequest(fromUsername, accept) {
+    const profile = await findByUsername(fromUsername);
+    if (!profile) throw new Error("Kullanıcı bulunamadı");
+    const uid = STATE.session.user.id;
+    if (!accept) {
+      await STATE.client
+        .from("friendships")
+        .delete()
+        .eq("user_id", profile.id)
+        .eq("friend_id", uid)
+        .eq("status", "pending");
+      return { rejected: true };
+    }
+    // A→B pending → accepted + B→A accepted
+    const { error: e1 } = await STATE.client
+      .from("friendships")
+      .update({ status: "accepted" })
+      .eq("user_id", profile.id)
+      .eq("friend_id", uid);
+    if (e1) throw e1;
+    const { error: e2 } = await STATE.client.from("friendships").upsert(
+      { user_id: uid, friend_id: profile.id, status: "accepted" },
+      { onConflict: "user_id,friend_id" }
+    );
+    if (e2) throw e2;
+    return {
+      accepted: true,
+      username: profile.username,
+      displayName: profile.display_name || profile.username,
+      cloudId: profile.id,
+    };
+  }
+
+  async function cancelFriendRequest(toUsername) {
+    const profile = await findByUsername(toUsername);
+    if (!profile) return;
+    const uid = STATE.session.user.id;
+    await STATE.client
+      .from("friendships")
+      .delete()
+      .eq("user_id", uid)
+      .eq("friend_id", profile.id)
+      .eq("status", "pending");
   }
 
   async function logMissedCall({ calleeUsername, groupId }) {
@@ -376,7 +489,11 @@
     currentUser,
     updateProfile,
     listFriends,
+    listIncomingFriendRequests,
+    listOutgoingFriendRequests,
     addFriendByUsername,
+    respondFriendRequest,
+    cancelFriendRequest,
     findByUsername,
     logMissedCall,
     startPresence,

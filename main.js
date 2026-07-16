@@ -250,13 +250,26 @@ let tray = null;
 let pendingScreenSourceId = null;
 let currentUserId = null;
 
+function appIconPath() {
+  const ico = path.join(__dirname, "assets", "icon.ico");
+  const png = path.join(__dirname, "assets", "icon.png");
+  if (process.platform === "win32" && fs.existsSync(ico)) return ico;
+  if (fs.existsSync(png)) return png;
+  if (fs.existsSync(ico)) return ico;
+  return null;
+}
+
 function appIcon() {
-  const p = path.join(__dirname, "assets", "icon.png");
-  if (fs.existsSync(p)) return nativeImage.createFromPath(p);
+  const p = appIconPath();
+  if (p) {
+    const img = nativeImage.createFromPath(p);
+    if (!img.isEmpty()) return img;
+  }
   return nativeImage.createEmpty();
 }
 
 function createWindow() {
+  const iconPath = appIconPath();
   const icon = appIcon();
   win = new BrowserWindow({
     width: 1180,
@@ -267,7 +280,8 @@ function createWindow() {
     backgroundColor: "#1a1b1e",
     autoHideMenuBar: true,
     show: false,
-    icon: icon.isEmpty() ? undefined : icon,
+    // Windows görev çubuğu: .ico yolu en güvenilir
+    icon: iconPath || (icon.isEmpty() ? undefined : icon),
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -403,7 +417,17 @@ function setupDisplayMedia() {
   }
 }
 
+// Windows: görev çubuğu / atlama listesi kimliği (Electron varsayılanı yerine Hearth)
+if (process.platform === "win32") {
+  app.setAppUserModelId("com.hearth.app");
+}
+
 app.whenReady().then(() => {
+  if (process.platform === "win32") {
+    try {
+      app.setAppUserModelId("com.hearth.app");
+    } catch {}
+  }
   createWindow();
   createTray();
   setupDisplayMedia();

@@ -209,6 +209,9 @@
     btnCheckUpdates: $("btn-check-updates"),
     appVersionLabel: $("app-version-label"),
     updateStatusLabel: $("update-status-label"),
+    mediaVideos: $("media-videos"),
+    btnLogoUpdate: $("btn-logo-update"),
+    updateBadge: $("update-badge"),
     modalScreen: $("modal-screen"),
     screenList: $("screen-list"),
     modalAvatar: $("modal-avatar"),
@@ -258,6 +261,10 @@
   let ctxTargetMessage = null;
   /** @type {any} */
   let screenCall = null;
+  /** @type {Map<string, any>} */
+  const screenCalls = new Map();
+  /** @type {Map<string, HTMLAudioElement>} grup/çoklu ses */
+  const peerVoiceEls = new Map();
   /** @type {any} */
   let incomingCall = null;
   /** @type {string | null} */
@@ -284,6 +291,9 @@
   let capturingWhich = "mic"; // mic | deafen
   let chatExpanded = false;
   let preDeafenOutput = 100;
+  let friendRequests = [];
+  let updateAvailableInfo = null;
+  let prefs = { theme: "dark", language: "tr", timeFormat: "24", fontScale: 100 };
 
   // incoming file state
   let recvFile = null;
@@ -392,13 +402,174 @@
     try {
       if (settings.soundNotifyEnabled === false) return;
       if (settings.desktopNotify === false) return;
-      if (me && me.status && me.status !== "online") return;
+      // Anlık durum: select / me.status — dnd/idle/invisible'da ses yok
+      const st = (el.myStatusSelect && el.myStatusSelect.value) || (me && me.status) || "online";
+      if (st !== "online") return;
       const focused = await api.isWindowFocused();
       if (focused) return;
       ensureSounds();
+      if (!snd.notify) return;
       snd.notify.currentTime = 0;
+      snd.notify.muted = false;
+      snd.notify.volume = soundMasterVol();
       await snd.notify.play();
-    } catch {}
+    } catch (e) {
+      console.warn("notify", e);
+    }
+  }
+
+  const I18N = {
+    tr: {
+      statusOnline: "Çevrimiçi",
+      statusIdle: "Boşta",
+      statusDnd: "Rahatsız etme",
+      statusInvisible: "Görünmez",
+      friends: "Arkadaşlar",
+      friendRequests: "İstekler",
+      online: "Çevrimiçi",
+      offline: "Çevrimdışı",
+      busy: "Görüşmede",
+      accept: "Kabul",
+      reject: "Reddet",
+      sendRequest: "İstek gönder",
+      requestSent: "Arkadaşlık isteği gönderildi.",
+      requestAccepted: "Arkadaşlık kabul edildi.",
+      updateReady: "Güncelleme hazır — tıkla",
+    },
+    en: {
+      statusOnline: "Online",
+      statusIdle: "Idle",
+      statusDnd: "Do not disturb",
+      statusInvisible: "Invisible",
+      friends: "Friends",
+      friendRequests: "Requests",
+      online: "Online",
+      offline: "Offline",
+      busy: "In a call",
+      accept: "Accept",
+      reject: "Decline",
+      sendRequest: "Send request",
+      requestSent: "Friend request sent.",
+      requestAccepted: "Friend request accepted.",
+      updateReady: "Update ready — click",
+    },
+  };
+
+  function t(key) {
+    const lang = prefs.language || "tr";
+    return (I18N[lang] && I18N[lang][key]) || (I18N.tr && I18N.tr[key]) || key;
+  }
+
+  function applyTheme(theme) {
+    const th = theme || prefs.theme || "dark";
+    prefs.theme = th;
+    document.documentElement.setAttribute("data-theme", th);
+  }
+
+  function applyFontScale(scale) {
+    const s = Math.max(85, Math.min(140, Number(scale) || 100));
+    prefs.fontScale = s;
+    document.documentElement.style.setProperty("--font-scale", String(s / 100));
+  }
+
+  function applyLanguage(lang) {
+    prefs.language = lang === "en" ? "en" : "tr";
+    document.documentElement.lang = prefs.language;
+    document.querySelectorAll("[data-i18n]").forEach((node) => {
+      const k = node.getAttribute("data-i18n");
+      if (!k) return;
+      const val = t(k);
+      if (val && val !== k) {
+        if (node.tagName === "INPUT" || node.tagName === "TEXTAREA") {
+          /* placeholder handled separately */
+        } else if (node.children.length && node.querySelector("input,select,textarea")) {
+          /* label with control inside — skip full replace */
+        } else {
+          node.textContent = val;
+        }
+      }
+    });
+    syncStatusSummary();
+  }
+
+  function formatMsgTime(ts) {
+    const d = new Date(ts || Date.now());
+    if (prefs.timeFormat === "12") {
+      return d.toLocaleString(prefs.language === "en" ? "en-US" : "tr-TR", {
+        hour: "numeric",
+        minute: "2-digit",
+        hour12: true,
+        day: "2-digit",
+        month: "2-digit",
+      });
+    }
+    return d.toLocaleString(prefs.language === "en" ? "en-GB" : "tr-TR", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+      day: "2-digit",
+      month: "2-digit",
+    });
+  }
+
+  function syncStatusSummary() {
+    const st = (el.myStatusSelect && el.myStatusSelect.value) || (me && me.status) || "online";
+    const map = {
+      online: t("statusOnline"),
+      idle: t("statusIdle"),
+      dnd: t("statusDnd"),
+      invisible: t("statusInvisible"),
+    };
+    const lab = $("status-summary-label");
+    const dot = $("status-summary-dot");
+    if (lab) lab.textContent = map[st] || st;
+    if (dot) dot.className = "status-dot " + st;
+    document.querySelectorAll('input[name="my-status"]').forEach((r) => {
+      r.checked = r.value === st;
+    });
+  }
+
+  function attachPeerVoice(username, stream) {
+    if (!username || !stream) return;
+    const tracks = stream.getAudioTracks();
+    if (!tracks.length) return;
+    let a = peerVoiceEls.get(username);
+    if (!a) {
+      a = new Audio();
+      a.autoplay = true;
+      peerVoiceEls.set(username, a);
+    }
+    a.srcObject = new MediaStream(tracks);
+    a.muted = !!deafened;
+    a.volume = Math.min(1, Math.max(0, (settings.outputVolume ?? 100) / 100));
+    a.play().catch(() => {});
+  }
+
+  function clearPeerVoices() {
+    for (const a of peerVoiceEls.values()) {
+      try {
+        a.pause();
+        a.srcObject = null;
+      } catch {}
+    }
+    peerVoiceEls.clear();
+  }
+
+  function setPeerVoicesMuted(m) {
+    for (const a of peerVoiceEls.values()) {
+      a.muted = !!m;
+    }
+  }
+
+  function setUpdateBadge(info) {
+    updateAvailableInfo = info || null;
+    const badge = $("update-badge");
+    const btn = $("btn-logo-update");
+    if (badge) {
+      badge.hidden = !info;
+      badge.title = info ? t("updateReady") + " v" + (info.version || "") : "";
+    }
+    if (btn) btn.title = info ? t("updateReady") : "Hearth";
   }
 
   function fillSoundSelect(selectEl, selected) {
@@ -456,16 +627,28 @@
 
   let mediaOfferResolve = null;
   function askMediaOffer(meta) {
+    return askFileOffer(meta);
+  }
+  function askFileOffer(meta) {
     return new Promise((resolve) => {
       mediaOfferResolve = resolve;
-      if (el.mediaOfferTitle) el.mediaOfferTitle.textContent = meta.kind === "video" ? "Video geliyor" : "Fotoğraf geliyor";
-      if (el.mediaOfferDetail)
-        el.mediaOfferDetail.textContent = `${meta.from || "Arkadaş"}: ${meta.name} (${fmtSize(meta.size || 0)}) — indirilsin mi?`;
-      if (el.modalMediaOffer) el.modalMediaOffer.hidden = false;
+      const text = $("file-offer-text");
+      if (text) {
+        text.textContent = `${meta.from || "Arkadaş"}: ${meta.name} (${fmtSize(meta.size || 0)}) — kabul edilsin mi?`;
+      }
+      const modal = $("modal-file-offer") || el.modalMediaOffer;
+      if (modal) modal.hidden = false;
+      // Eski modal yoksa confirm
+      if (!modal) {
+        const ok = confirm(`${meta.from}: ${meta.name} (${fmtSize(meta.size || 0)}) alınsın mı?`);
+        mediaOfferResolve = null;
+        resolve(ok);
+      }
     });
   }
   function closeMediaOffer(ok) {
-    if (el.modalMediaOffer) el.modalMediaOffer.hidden = true;
+    const modal = $("modal-file-offer") || el.modalMediaOffer;
+    if (modal) modal.hidden = true;
     if (mediaOfferResolve) {
       mediaOfferResolve(!!ok);
       mediaOfferResolve = null;
@@ -612,11 +795,13 @@
   }
 
   function setMediaHeight(h) {
-    const v = Math.max(120, Math.min(420, Number(h) || 220));
+    const v = Math.max(140, Math.min(520, Number(h) || 220));
     if (el.mediaDock) {
-      // vh ile sınırlı: hem slider hem pencere yüksekliğine uyum
-      const vh = Math.max(14, Math.min(40, Math.round((v / (window.innerHeight || 800)) * 100)));
-      el.mediaDock.style.setProperty("--media-h", `min(${v}px, ${vh}vh)`);
+      el.mediaDock.style.setProperty("--media-h", v + "px");
+      el.mediaDock.style.flex = "0 0 auto";
+    }
+    if (el.mediaVideos) {
+      el.mediaVideos.style.height = v + "px";
     }
     if (el.mediaHeight) el.mediaHeight.value = String(v);
   }
@@ -685,20 +870,20 @@
 
   function friendStatusLabel(f, st) {
     const remoteSt = f.remoteStatus || "";
-    if (st === "busy") return "Görüşmede";
+    if (st === "busy") return t("busy");
     if (st === "online") {
-      if (remoteSt === "dnd") return "Rahatsız etme";
-      if (remoteSt === "idle") return "Boşta";
-      return "Çevrimiçi";
+      if (remoteSt === "dnd") return t("statusDnd");
+      if (remoteSt === "idle") return t("statusIdle");
+      return t("online");
     }
-    return "Çevrimdışı";
+    return t("offline");
   }
 
   function updateGroupSelectionUi() {
     const n = selectedFriends.size;
     if (el.btnGroupFromSelection) {
       el.btnGroupFromSelection.hidden = n < 1;
-      el.btnGroupFromSelection.title = n ? `${n} seçili — grup oluştur / ara` : "";
+      el.btnGroupFromSelection.title = n ? `${n} seçili — grup odası + ara` : "";
     }
   }
 
@@ -740,7 +925,7 @@
     meta.querySelector(".sub span:last-child").textContent =
       (f.statusText ? f.statusText + " · " : "") + friendStatusLabel(f, st);
 
-    row.appendChild(check);
+    // Checkbox sağda (modern soluk tik)
     row.appendChild(av);
     row.appendChild(meta);
     const uc = unread.get(f.username) || 0;
@@ -750,11 +935,79 @@
       badge.textContent = uc > 99 ? "99+" : String(uc);
       row.appendChild(badge);
     }
+    row.appendChild(check);
     row.addEventListener("click", (e) => {
-      if (e.target === check) return;
+      if (e.target === check || e.target.closest?.(".friend-check")) return;
       openFriend(f.username);
     });
     return row;
+  }
+
+  function renderFriendRequests() {
+    const box = $("friend-requests-box");
+    const list = $("friend-requests-list");
+    if (!box || !list) return;
+    list.innerHTML = "";
+    if (!friendRequests.length) {
+      box.hidden = true;
+      return;
+    }
+    box.hidden = false;
+    for (const req of friendRequests) {
+      const row = document.createElement("div");
+      row.className = "friend-request-row";
+      row.innerHTML = `<strong></strong><div class="req-actions"></div>`;
+      row.querySelector("strong").textContent = req.displayName || req.username;
+      const acc = document.createElement("button");
+      acc.type = "button";
+      acc.className = "btn success sm";
+      acc.textContent = t("accept");
+      acc.addEventListener("click", async () => {
+        try {
+          if (cloudMode && window.HearthCloud?.respondFriendRequest) {
+            await window.HearthCloud.respondFriendRequest(req.username, true);
+          }
+          await refreshFriendsAndRequests();
+          renderMessage({ type: "system", text: t("requestAccepted") + " @" + req.username });
+        } catch (e) {
+          alert(e.message || String(e));
+        }
+      });
+      const rej = document.createElement("button");
+      rej.type = "button";
+      rej.className = "btn soft sm";
+      rej.textContent = t("reject");
+      rej.addEventListener("click", async () => {
+        try {
+          if (cloudMode && window.HearthCloud?.respondFriendRequest) {
+            await window.HearthCloud.respondFriendRequest(req.username, false);
+          }
+          await refreshFriendsAndRequests();
+        } catch (e) {
+          alert(e.message || String(e));
+        }
+      });
+      row.querySelector(".req-actions").appendChild(acc);
+      row.querySelector(".req-actions").appendChild(rej);
+      list.appendChild(row);
+    }
+  }
+
+  async function refreshFriendsAndRequests() {
+    if (cloudMode && window.HearthCloud?.isEnabled()) {
+      friends = await window.HearthCloud.listFriends();
+      try {
+        await api; // keep local mirror soft
+      } catch {}
+      if (window.HearthCloud.listIncomingFriendRequests) {
+        friendRequests = await window.HearthCloud.listIncomingFriendRequests();
+      }
+    } else {
+      friends = await api.listFriends(me.id);
+      friendRequests = [];
+    }
+    renderFriends();
+    renderFriendRequests();
   }
 
   function renderFriends() {
@@ -798,14 +1051,14 @@
     };
 
     el.friendList.appendChild(
-      section("Çevrimiçi", online, friendsOnlineCollapsed, () => {
+      section(t("online"), online, friendsOnlineCollapsed, () => {
         friendsOnlineCollapsed = !friendsOnlineCollapsed;
         if (me) api.saveSettings(me.id, { friendsOnlineCollapsed });
         renderFriends();
       })
     );
     el.friendList.appendChild(
-      section("Çevrimdışı", offline, friendsOfflineCollapsed, () => {
+      section(t("offline"), offline, friendsOfflineCollapsed, () => {
         friendsOfflineCollapsed = !friendsOfflineCollapsed;
         if (me) api.saveSettings(me.id, { friendsOfflineCollapsed });
         renderFriends();
@@ -843,7 +1096,28 @@
         e.stopPropagation();
         openGroup(g.id).then(() => startGroupCall(g));
       });
+      const delBtn = document.createElement("button");
+      delBtn.type = "button";
+      delBtn.className = "btn danger sm btn-del-group";
+      delBtn.textContent = "🗑️";
+      delBtn.title = "Grubu sil";
+      delBtn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        if (!confirm(`"${g.name}" silinsin mi?`)) return;
+        try {
+          await api.deleteGroup(me.id, g.id);
+          groups = await api.listGroups(me.id);
+          if (activeGroupId === g.id) {
+            activeGroupId = null;
+            setPeerHeader(null);
+          }
+          renderGroups();
+        } catch (err) {
+          alert(err.message || String(err));
+        }
+      });
       actions.appendChild(callBtn);
+      actions.appendChild(delBtn);
       btn.appendChild(actions);
       btn.addEventListener("click", () => openGroup(g.id));
       el.groupList.appendChild(btn);
@@ -856,7 +1130,72 @@
     if (force || nearBottom) box.scrollTop = box.scrollHeight;
   }
 
+  function appendMsgBodyContent(container, m) {
+    if (m.kind === "gif" && m.url) {
+      const img = document.createElement("img");
+      img.className = "gif";
+      img.src = m.url;
+      img.alt = "gif";
+      container.appendChild(img);
+    } else if (m.kind === "image" || m.kind === "video" || (m.kind === "file" && isMediaFileName(m.name))) {
+      const kind = m.kind === "video" || mediaKind(m.name) === "video" ? "video" : "image";
+      if (m.previewUrl) {
+        if (kind === "video") {
+          const v = document.createElement("video");
+          v.className = "preview";
+          v.src = m.previewUrl;
+          v.controls = true;
+          container.appendChild(v);
+        } else {
+          const img = document.createElement("img");
+          img.className = "preview";
+          img.src = m.previewUrl;
+          img.alt = m.name || "medya";
+          container.appendChild(img);
+        }
+      } else {
+        container.appendChild(document.createTextNode(`📎 ${m.name || "medya"}`));
+      }
+    } else if (m.kind === "file") {
+      container.appendChild(document.createTextNode(`📎 ${m.name} (${fmtSize(m.size || 0)})`));
+    } else {
+      const body = document.createElement("div");
+      body.className = "msg-line";
+      body.textContent = m.text || "";
+      container.appendChild(body);
+    }
+    const time = document.createElement("span");
+    time.className = "time";
+    time.textContent = formatMsgTime(m.ts);
+    container.appendChild(time);
+  }
+
   function renderMessage(m, { scroll = true, grouped = false } = {}) {
+    // Aynı kişiden art arda: önceki balona satır ekle
+    if (
+      grouped &&
+      m.type !== "system" &&
+      m.kind !== "missed-call" &&
+      !m.deleted &&
+      (m.kind === "text" || !m.kind || m.type === "chat")
+    ) {
+      const last = el.chatLog.lastElementChild;
+      if (last && last.classList.contains("stack-host") && last.dataset.from === (m.from || "")) {
+        const line = document.createElement("div");
+        line.className = "msg-line";
+        line.dataset.mid = m.id || "";
+        line.textContent = m.text || "";
+        const time = document.createElement("span");
+        time.className = "time";
+        time.textContent = formatMsgTime(m.ts);
+        line.appendChild(time);
+        last.appendChild(line);
+        if (scroll) scrollChatToBottom(true);
+        updateChatEmpty();
+        return;
+      }
+    }
+
     const div = document.createElement("div");
     div.dataset.mid = m.id || "";
     if (m.kind === "missed-call" || m.type === "missed-call") {
@@ -876,17 +1215,17 @@
     } else {
       const mine = m.from === me.username;
       div.className =
-        "msg" +
+        "msg stack-host" +
         (mine ? " mine" : "") +
-        (m.kind === "file" ? " file" : "") +
-        (grouped ? " grouped" : "");
+        (m.kind === "file" ? " file" : "");
+      div.dataset.from = m.from || "";
       if (m.replyTo && m.replyTo.text) {
         const ref = document.createElement("div");
         ref.className = "reply-ref";
         ref.textContent = `↩ ${m.replyTo.from || ""}: ${(m.replyTo.text || "").slice(0, 80)}`;
         div.appendChild(ref);
       }
-      if (!grouped) {
+      {
         const head = document.createElement("div");
         head.className = "msg-head";
         const av = document.createElement("div");
@@ -916,60 +1255,7 @@
         div.appendChild(head);
       }
 
-      if (m.kind === "gif" && m.url) {
-        const img = document.createElement("img");
-        img.className = "gif";
-        img.src = m.url;
-        img.alt = "gif";
-        div.appendChild(img);
-      } else if (m.kind === "image" || m.kind === "video" || (m.kind === "file" && isMediaFileName(m.name))) {
-        const kind = m.kind === "video" || mediaKind(m.name) === "video" ? "video" : "image";
-        if (m.previewUrl) {
-          if (kind === "video") {
-            const v = document.createElement("video");
-            v.className = "preview";
-            v.src = m.previewUrl;
-            v.controls = true;
-            div.appendChild(v);
-          } else {
-            const img = document.createElement("img");
-            img.className = "preview";
-            img.src = m.previewUrl;
-            img.alt = m.name || "medya";
-            div.appendChild(img);
-          }
-        } else {
-          div.appendChild(document.createTextNode(`📎 ${m.name || "medya"}`));
-        }
-        const actions = document.createElement("div");
-        actions.className = "media-actions";
-        if (m.localPath) {
-          const b1 = document.createElement("button");
-          b1.type = "button";
-          b1.className = "btn soft sm";
-          b1.textContent = "Klasör";
-          b1.addEventListener("click", () => api.openPath(m.localPath));
-          actions.appendChild(b1);
-        }
-        div.appendChild(actions);
-      } else if (m.kind === "file") {
-        div.appendChild(document.createTextNode(`📎 ${m.name} (${fmtSize(m.size || 0)}) `));
-        if (m.localPath) {
-          const a = document.createElement("a");
-          a.href = "#";
-          a.textContent = "Klasörde göster";
-          a.addEventListener("click", (e) => {
-            e.preventDefault();
-            api.openPath(m.localPath);
-          });
-          div.appendChild(a);
-        }
-      } else {
-        const body = document.createElement("span");
-        body.className = "msg-body";
-        body.textContent = m.text || "";
-        div.appendChild(body);
-      }
+      appendMsgBodyContent(div, m);
 
       if (m.reactions && Object.keys(m.reactions).length) {
         const rx = document.createElement("div");
@@ -983,11 +1269,6 @@
         }
         div.appendChild(rx);
       }
-
-      const time = document.createElement("span");
-      time.className = "time";
-      time.textContent = fmtTime(m.ts) + (m.editedAt ? " · düzenlendi" : "");
-      div.appendChild(time);
 
       // Sağ tık menüsü
       div.addEventListener("contextmenu", (e) => {
@@ -1312,8 +1593,12 @@
     const v = Math.max(0, Math.min(200, Number(pct) || 100));
     if (el.outVol) el.outVol.value = String(v);
     if (el.outVolVal) el.outVolVal.textContent = v + "%";
-    // Deafen: çağrı sesi tamamen kapalı
-    el.remoteAudio.volume = deafened ? 0 : Math.min(1, v / 100);
+    const vol = deafened ? 0 : Math.min(1, v / 100);
+    if (el.remoteAudio) el.remoteAudio.volume = vol;
+    for (const a of peerVoiceEls.values()) {
+      a.volume = vol;
+      a.muted = !!deafened;
+    }
   }
 
   function applyScreenAudioVolume(pct) {
@@ -1633,20 +1918,29 @@
       return;
     }
 
+    if (msg.type === "group-call-invite") {
+      // bilgi — asıl ses peer.call ile gelir
+      if (msg.groupId) {
+        // grup listesinde yoksa yerel kayıt yok; yine de arama gelecek
+      }
+      return;
+    }
+
     if (msg.type === "file-start") {
       const kind = msg.mediaKind || mediaKind(msg.name);
-      // Foto/video: indir / reddet seçeneği
-      if (kind === "image" || kind === "video") {
-        const ok = await askMediaOffer({
-          kind,
-          name: msg.name,
-          size: msg.size,
-          from: username,
-        });
-        if (!ok) {
-          sendTo(username, { type: "file-abort", id: msg.id });
-          return;
+      // Her dosya için alıcı onayı
+      const ok = await askFileOffer({
+        kind,
+        name: msg.name,
+        size: msg.size,
+        from: username,
+      });
+      if (!ok) {
+        sendTo(username, { type: "file-abort", id: msg.id });
+        if (activeFriend === username) {
+          renderMessage({ type: "system", text: `Dosya reddedildi: ${msg.name}` });
         }
+        return;
       }
       const savePath = await api.saveFileStart(msg.name, true);
       if (!savePath) {
@@ -1850,12 +2144,14 @@
     });
 
     peer.on("call", async (call) => {
-      let fromUser = null;
-      for (const f of friends) {
-        const pid = await peerIdOf(f.username);
-        if (pid === call.peer) {
-          fromUser = f.username;
-          break;
+      let fromUser = (call.metadata && call.metadata.from) || null;
+      if (!fromUser) {
+        for (const f of friends) {
+          const pid = await peerIdOf(f.username);
+          if (pid === call.peer) {
+            fromUser = f.username;
+            break;
+          }
         }
       }
       if (!fromUser) {
@@ -1864,9 +2160,11 @@
       }
 
       const kind = (call.metadata && call.metadata.kind) || "audio";
+      const groupId = call.metadata && call.metadata.groupId;
+
       if (kind === "screen") {
         call.answer();
-        call.on("stream", (stream) => onMediaStream(stream, { isScreen: true }));
+        call.on("stream", (stream) => onMediaStream(stream, { isScreen: true, fromUser }));
         call.on("close", () => {
           el.remoteVideo.srcObject = null;
           el.remotePh.hidden = false;
@@ -1875,17 +2173,38 @@
         return;
       }
 
+      // Aynı grup mesh: görüşmedeyken ek peer'ı otomatik kabul
+      if (inCall && groupId && activeGroupId === groupId) {
+        try {
+          const stream = await ensureMicGraph();
+          call.answer(stream);
+          mediaCalls.set(fromUser, call);
+          call.on("stream", (s) => onMediaStream(s, { isScreen: false, fromUser }));
+          call.on("close", () => {
+            mediaCalls.delete(fromUser);
+            peerVoiceEls.delete(fromUser);
+          });
+        } catch {
+          call.close();
+        }
+        return;
+      }
+
       if (inCall) {
+        // 1:1 iken ikinci çağrıyı reddet
         call.close();
         return;
       }
       incomingCall = call;
       callWith = fromUser;
+      if (groupId) activeGroupId = groupId;
       el.incomingBar.hidden = false;
-      el.incomingText.textContent = `${fromUser} arıyor…`;
+      el.incomingText.textContent = groupId
+        ? `${fromUser} grup araması…`
+        : `${fromUser} arıyor…`;
       playIncomingRing();
       api.notifyIncoming();
-      if (activeFriend !== fromUser) openFriend(fromUser);
+      if (!groupId && activeFriend !== fromUser) openFriend(fromUser);
     });
 
     peer.on("disconnected", () => {
@@ -2220,12 +2539,19 @@
       } catch {}
       screenCall = null;
     }
+    for (const [, c] of screenCalls) {
+      try {
+        c.close();
+      } catch {}
+    }
+    screenCalls.clear();
     for (const [, c] of mediaCalls) {
       try {
         c.close();
       } catch {}
     }
     mediaCalls.clear();
+    clearPeerVoices();
     if (mediaCall) {
       const c = mediaCall;
       mediaCall = null;
@@ -2247,15 +2573,18 @@
     if (was) renderMessage({ type: "system", text: "Görüşme sona erdi." });
   }
 
-  function onMediaStream(stream, { isScreen = false } = {}) {
+  function onMediaStream(stream, { isScreen = false, fromUser = null } = {}) {
     const audio = stream.getAudioTracks();
     const video = stream.getVideoTracks();
     if (audio.length) {
       if (isScreen && el.remoteScreenAudio) {
-        // Sistem/oyun sesi — çağrı mikrofon sesinden AYRI element
         el.remoteScreenAudio.srcObject = new MediaStream(audio);
         el.remoteScreenAudio.play().catch(() => {});
         applyScreenAudioVolume(settings.screenAudioVolume ?? 100);
+      } else if (fromUser) {
+        // Her peer ayrı ses — grupta üst üste binmesin
+        attachPeerVoice(fromUser, stream);
+        applyVoiceVolume(settings.outputVolume ?? 100);
       } else {
         el.remoteAudio.srcObject = new MediaStream(audio);
         el.remoteAudio.play().catch(() => {});
@@ -2272,6 +2601,7 @@
 
   function bindMediaCall(call, friendUsername) {
     mediaCall = call;
+    mediaCalls.set(friendUsername, call);
     inCall = true;
     callWith = friendUsername;
     setPresence(friendUsername, "busy");
@@ -2280,12 +2610,19 @@
     updateCallButtons();
     call.on("stream", (stream) => {
       stopRings();
-      onMediaStream(stream, { isScreen: false });
+      onMediaStream(stream, { isScreen: false, fromUser: friendUsername });
     });
     call.on("close", () => {
-      if (mediaCall === call || inCall) hangup();
+      mediaCalls.delete(friendUsername);
+      peerVoiceEls.get(friendUsername)?.pause();
+      peerVoiceEls.delete(friendUsername);
+      if (!mediaCalls.size && mediaCall === call) hangup();
+      else if (mediaCall === call) mediaCall = null;
     });
-    call.on("error", () => hangup());
+    call.on("error", () => {
+      mediaCalls.delete(friendUsername);
+      if (!mediaCalls.size) hangup();
+    });
   }
 
   async function appendMissedCall(targetKey, withUser, direction) {
@@ -2417,23 +2754,25 @@
       const stream = await ensureMicGraph();
       playOutgoingRing();
       inCall = true;
+      callWith = null;
       el.mediaDock.hidden = false;
       startCallTimer();
       updateCallButtons();
       if (el.callMembersLabel) el.callMembersLabel.textContent = g.members.join(", ");
-      let connected = 0;
+
+      // Mesh: her çevrimiçi üyeyi ara + data ile gruba davet
       for (const member of g.members) {
         if (member === me.username) continue;
+        sendTo(member, {
+          type: "group-call-invite",
+          groupId: g.id,
+          members: g.members,
+          from: me.username,
+          displayName: me.displayName,
+        });
         const st = presence.get(member) || "offline";
         if (st === "offline" || !conns.get(member)?.open) {
           await appendMissedCall(g.id, member, "out");
-          sendTo(member, {
-            type: "missed-call",
-            from: me.username,
-            groupId: g.id,
-            displayName: me.displayName,
-            ts: Date.now(),
-          });
           continue;
         }
         try {
@@ -2444,16 +2783,19 @@
           if (call) {
             mediaCalls.set(member, call);
             call.on("stream", (s) => {
-              connected++;
               stopRings();
-              onMediaStream(s, { isScreen: false });
+              onMediaStream(s, { isScreen: false, fromUser: member });
             });
             call.on("close", () => {
               mediaCalls.delete(member);
+              peerVoiceEls.get(member)?.pause();
+              peerVoiceEls.delete(member);
               if (!mediaCalls.size && !mediaCall) hangup();
             });
           }
-        } catch {}
+        } catch (e) {
+          console.warn("group call", member, e);
+        }
       }
       if (!mediaCalls.size) {
         stopRings();
@@ -2466,6 +2808,35 @@
       stopRings();
       renderMessage({ type: "system", text: "Mikrofon izni gerekli." });
     }
+  }
+
+  /** Mesh: gruptaki diğer üyelere de ses aç */
+  async function meshJoinGroupCall(groupId, exceptUser) {
+    const g = groups.find((x) => x.id === groupId);
+    if (!g) return;
+    try {
+      const stream = await ensureMicGraph();
+      for (const member of g.members) {
+        if (member === me.username || member === exceptUser) continue;
+        if (mediaCalls.has(member)) continue;
+        const st = presence.get(member) || "offline";
+        if (st === "offline") continue;
+        try {
+          const pid = await peerIdOf(member);
+          const call = peer.call(pid, stream, {
+            metadata: { kind: "audio", from: me.username, groupId },
+          });
+          if (call) {
+            mediaCalls.set(member, call);
+            call.on("stream", (s) => onMediaStream(s, { isScreen: false, fromUser: member }));
+            call.on("close", () => {
+              mediaCalls.delete(member);
+              peerVoiceEls.delete(member);
+            });
+          }
+        } catch {}
+      }
+    } catch {}
   }
 
   async function createGroupFromSelection() {
@@ -2481,7 +2852,8 @@
       renderFriends();
       renderGroups();
       await openGroup(g.id);
-      renderMessage({ type: "system", text: "Grup odası oluşturuldu. Ara ile herkese sesli çağrı açabilirsin." });
+      renderMessage({ type: "system", text: "Grup odası oluşturuldu — aranıyor…" });
+      await startGroupCall(g);
     } catch (e) {
       alert(e.message || String(e));
     }
@@ -2493,10 +2865,15 @@
       stopRings();
       const stream = await ensureMicGraph();
       const friend = callWith;
+      const groupId = incomingCall.metadata && incomingCall.metadata.groupId;
       incomingCall.answer(stream);
       bindMediaCall(incomingCall, friend);
       incomingCall = null;
       el.incomingBar.hidden = true;
+      if (groupId) {
+        activeGroupId = groupId;
+        await meshJoinGroupCall(groupId, friend);
+      }
       renderMessage({ type: "system", text: "Arama açıldı." });
     } catch {
       rejectCall();
@@ -2569,7 +2946,12 @@
   }
 
   async function startScreenShare() {
-    if (!inCall || !callWith) return;
+    const targets = [];
+    if (callWith) targets.push(callWith);
+    for (const u of mediaCalls.keys()) {
+      if (!targets.includes(u)) targets.push(u);
+    }
+    if (!inCall || !targets.length) return;
     if (screenStream) {
       stopScreen();
       return;
@@ -2634,11 +3016,21 @@
             } catch {}
           });
 
-          const pid = await peerIdOf(callWith);
-          screenCall = peer.call(pid, screenStream, {
-            metadata: { kind: "screen", from: me.username },
-          });
-          setTimeout(() => optimizeScreenSender(screenCall, q, fps), 400);
+          for (const target of targets) {
+            try {
+              const pid = await peerIdOf(target);
+              const sc = peer.call(pid, screenStream, {
+                metadata: { kind: "screen", from: me.username },
+              });
+              if (sc) {
+                if (!screenCall) screenCall = sc;
+                screenCalls.set(target, sc);
+                setTimeout(() => optimizeScreenSender(sc, q, fps), 400);
+              }
+            } catch (e) {
+              console.warn("screen to", target, e);
+            }
+          }
 
           el.localVideo.srcObject = new MediaStream(screenStream.getVideoTracks());
           el.localPh.hidden = true;
@@ -2673,10 +3065,19 @@
       } catch {}
       screenCall = null;
     }
+    for (const [, c] of screenCalls) {
+      try {
+        c.close();
+      } catch {}
+    }
+    screenCalls.clear();
     el.localVideo.srcObject = null;
     el.localPh.hidden = false;
     setScreenBtnUi();
-    if (callWith) sendTo(callWith, { type: "screen-stop" });
+    const notify = new Set();
+    if (callWith) notify.add(callWith);
+    for (const u of mediaCalls.keys()) notify.add(u);
+    for (const u of notify) sendTo(u, { type: "screen-stop" });
   }
 
   // ---------- emoji / gif ----------
@@ -2802,7 +3203,23 @@
     me = user;
     // Yerel ayarlar: cloud uuid veya local id
     settings = await api.getSettings(me.id);
+    prefs = {
+      theme: settings.theme || "dark",
+      language: settings.language || "tr",
+      timeFormat: settings.timeFormat || "24",
+      fontScale: settings.fontScale || 100,
+    };
+    applyTheme(prefs.theme);
+    applyFontScale(prefs.fontScale);
+    applyLanguage(prefs.language);
     await loadFriendsUnified();
+    if (cloudMode && window.HearthCloud?.listIncomingFriendRequests) {
+      try {
+        friendRequests = await window.HearthCloud.listIncomingFriendRequests();
+      } catch {
+        friendRequests = [];
+      }
+    }
     el.myDisplay.textContent = me.displayName || me.username;
     el.myUsername.textContent = "@" + me.username;
     try {
@@ -2832,6 +3249,7 @@
     }
     if (el.myStatusSelect) el.myStatusSelect.value = me.status || "online";
     if (el.myStatusText) el.myStatusText.value = me.statusText || "";
+    syncStatusSummary();
     setMicUi();
     setDeafenUi();
     setNoiseUi();
@@ -2845,6 +3263,7 @@
     }
     showApp();
     renderFriends();
+    renderFriendRequests();
     renderGroups();
     buildEmojiPanel();
     if (window.Notification && Notification.permission === "default") {
@@ -2866,14 +3285,26 @@
             for (const f of friends) {
               const meta = map.get(f.username);
               if (meta && meta.online) {
-                // invisible dışındakiler online sayılır (görünürlük)
                 if (meta.status === "invisible") presence.set(f.username, "offline");
                 else presence.set(f.username, "online");
-                f.remoteStatus = meta.status;
+                f.remoteStatus = meta.status || "online";
                 f.statusText = meta.statusText || "";
+              } else if (meta && !meta.online) {
+                presence.set(f.username, "offline");
+              }
+            }
+            // presence map'te olup friend listesinde olmayanlar
+            for (const [uname, meta] of map.entries()) {
+              if (!friends.find((x) => x.username === uname)) continue;
+              if (meta && meta.online && meta.status !== "invisible") {
+                presence.set(uname, "online");
               }
             }
             renderFriends();
+            if (activeFriend) {
+              const f = friends.find((x) => x.username === activeFriend);
+              if (f) setPeerHeader(f);
+            }
           },
         });
       } catch (e) {
@@ -2960,9 +3391,18 @@
     el.addFriendError.hidden = true;
     try {
       const uname = el.addFriendUser.value.trim();
+      if (!uname) throw new Error("Kullanıcı adı gir");
       if (cloudMode && window.HearthCloud?.isEnabled()) {
-        await window.HearthCloud.addFriendByUsername(uname);
-        await api.addFriend(me.id, uname).catch(() => {});
+        const res = await window.HearthCloud.addFriendByUsername(uname);
+        if (res?.pending) {
+          el.modalAdd.hidden = true;
+          renderMessage({ type: "system", text: t("requestSent") + " @" + uname });
+          await refreshFriendsAndRequests();
+          return;
+        }
+        if (res?.autoAccepted || res?.username) {
+          await api.addFriend(me.id, uname, res.displayName).catch(() => {});
+        }
       } else {
         await api.addFriend(me.id, uname);
       }
@@ -3095,27 +3535,40 @@
     }
   }
 
+  async function applyMyStatus(status) {
+    if (el.myStatusSelect) el.myStatusSelect.value = status;
+    if (cloudMode && window.HearthCloud?.isEnabled()) {
+      me = await window.HearthCloud.updateProfile({ status });
+      await window.HearthCloud.trackPresenceUpdate({
+        status,
+        statusText: me.statusText || "",
+      });
+    } else {
+      me = await api.updateProfile(me.id, { status });
+    }
+    updateMyStatusDot();
+    syncStatusSummary();
+    await broadcastPresence();
+  }
+
   if (el.myStatusSelect) {
     el.myStatusSelect.addEventListener("change", async () => {
-      const status = el.myStatusSelect.value;
-      if (cloudMode && window.HearthCloud?.isEnabled()) {
-        me = await window.HearthCloud.updateProfile({ status });
-        await window.HearthCloud.trackPresenceUpdate({
-          status,
-          statusText: me.statusText || "",
-        });
-      } else {
-        me = await api.updateProfile(me.id, { status });
-      }
-      updateMyStatusDot();
-      await broadcastPresence();
+      await applyMyStatus(el.myStatusSelect.value);
     });
   }
+  document.querySelectorAll('input[name="my-status"]').forEach((radio) => {
+    radio.addEventListener("change", async () => {
+      if (!radio.checked) return;
+      await applyMyStatus(radio.value);
+      const det = $("status-details");
+      if (det) det.open = false;
+    });
+  });
   if (el.myStatusText) {
-    let t;
+    let statusTextTimer;
     el.myStatusText.addEventListener("input", () => {
-      clearTimeout(t);
-      t = setTimeout(async () => {
+      clearTimeout(statusTextTimer);
+      statusTextTimer = setTimeout(async () => {
         const statusText = el.myStatusText.value.trim();
         if (cloudMode && window.HearthCloud?.isEnabled()) {
           me = await window.HearthCloud.updateProfile({ statusText });
@@ -3132,35 +3585,125 @@
     });
   }
 
+  // Logo üzerinde güncelleme rozeti
+  if (el.btnLogoUpdate) {
+    el.btnLogoUpdate.addEventListener("click", async () => {
+      if (!updateAvailableInfo) return;
+      try {
+        if (api.checkForUpdates) await api.checkForUpdates({ silent: false });
+      } catch (e) {
+        alert(e.message || String(e));
+      }
+    });
+  }
+  if (api.onUpdateStatus) {
+    api.onUpdateStatus((s) => {
+      if (s?.state === "available" || s?.state === "ready") {
+        setUpdateBadge({ version: s.version || "" });
+      }
+      if (el.updateStatusLabel && s?.message) el.updateStatusLabel.textContent = s.message;
+    });
+  }
+
   // Sürükle-bırak dosya
   if (el.chatShell) {
     el.chatShell.addEventListener("dragover", (e) => {
       e.preventDefault();
+      e.stopPropagation();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
       el.chatShell.classList.add("drag-over");
     });
-    el.chatShell.addEventListener("dragleave", () => el.chatShell.classList.remove("drag-over"));
+    el.chatShell.addEventListener("dragleave", (e) => {
+      if (!el.chatShell.contains(e.relatedTarget)) el.chatShell.classList.remove("drag-over");
+    });
     el.chatShell.addEventListener("drop", async (e) => {
       e.preventDefault();
+      e.stopPropagation();
       el.chatShell.classList.remove("drag-over");
       const f = e.dataTransfer?.files?.[0];
-      if (!f || !activeFriend) return;
-      // Electron: path özelliği
-      const p = f.path;
+      if (!f) return;
+      if (!activeFriend && !activeGroupId) {
+        renderMessage({ type: "system", text: "Önce bir sohbet seç." });
+        return;
+      }
+      let p = "";
+      try {
+        if (api.pathForFile) p = api.pathForFile(f) || "";
+      } catch {}
+      if (!p) p = f.path || "";
       if (!p) {
-        renderMessage({ type: "system", text: "Bu dosya yolu okunamadı; 📎 ile seç." });
+        renderMessage({ type: "system", text: "Dosya yolu okunamadı; 📎 ile seç." });
         return;
       }
       await sendFile({ path: p, name: f.name, size: f.size });
     });
   }
 
+  // Dosya teklifi butonları
+  const btnFileAcc = $("btn-file-offer-accept");
+  const btnFileRej = $("btn-file-offer-reject");
+  if (btnFileAcc) btnFileAcc.addEventListener("click", () => closeMediaOffer(true));
+  if (btnFileRej) btnFileRej.addEventListener("click", () => closeMediaOffer(false));
+
   if (el.mediaHeight) {
     el.mediaHeight.addEventListener("input", async () => {
       setMediaHeight(el.mediaHeight.value);
       settings.mediaDockHeight = Number(el.mediaHeight.value);
-      await api.saveSettings(me.id, { mediaDockHeight: settings.mediaDockHeight });
+      if (me) await api.saveSettings(me.id, { mediaDockHeight: settings.mediaDockHeight });
+    });
+    el.mediaHeight.addEventListener("change", async () => {
+      setMediaHeight(el.mediaHeight.value);
+      settings.mediaDockHeight = Number(el.mediaHeight.value);
+      if (me) await api.saveSettings(me.id, { mediaDockHeight: settings.mediaDockHeight });
     });
   }
+
+  // Ekran paneli sağ tık — izleme modları
+  function showVidCtx(x, y) {
+    let menu = $("vid-ctx-menu");
+    if (!menu) {
+      menu = document.createElement("div");
+      menu.id = "vid-ctx-menu";
+      menu.className = "vid-ctx-menu";
+      menu.hidden = true;
+      document.body.appendChild(menu);
+    }
+    menu.innerHTML = "";
+    const opts = [
+      ["both", "Yan yana"],
+      ["remote", "Sadece paylaşılan"],
+      ["local", "Sadece önizleme"],
+      ["fullscreen", "Tam ekran"],
+    ];
+    for (const [val, label] of opts) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.textContent = label;
+      b.addEventListener("click", () => {
+        menu.hidden = true;
+        if (val === "fullscreen") {
+          el.btnFullscreenMedia?.click();
+        } else if (el.mediaLayout) {
+          el.mediaLayout.value = val;
+          el.mediaLayout.dispatchEvent(new Event("change"));
+        }
+      });
+      menu.appendChild(b);
+    }
+    menu.hidden = false;
+    menu.style.left = Math.min(x, window.innerWidth - 200) + "px";
+    menu.style.top = Math.min(y, window.innerHeight - 160) + "px";
+  }
+  if (el.mediaVideos) {
+    el.mediaVideos.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      showVidCtx(e.clientX, e.clientY);
+    });
+  }
+  document.addEventListener("click", () => {
+    const m = $("vid-ctx-menu");
+    if (m) m.hidden = true;
+  });
 
   el.micVol.addEventListener("input", async () => {
     if (deafened) return;
@@ -3221,7 +3764,26 @@
 
   el.btnOpenSettings.addEventListener("click", async () => {
     if (el.setUsername) el.setUsername.value = me.username;
-    if (el.setEmail) el.setEmail.value = me.email;
+    if (el.setEmail) el.setEmail.value = me.email || "";
+    const setDn = $("set-display-name");
+    const setAb = $("set-about");
+    if (setDn) setDn.value = me.displayName || "";
+    if (setAb) setAb.value = me.about || "";
+    const prev = $("set-profile-avatar-preview");
+    if (prev) {
+      prev.innerHTML = "";
+      try {
+        const url = await api.getAvatar(me.id);
+        if (url) {
+          const im = document.createElement("img");
+          im.src = url;
+          applyAvatarFrame(im, settings.avatarFrame);
+          prev.appendChild(im);
+        } else prev.textContent = (me.displayName || me.username || "?")[0].toUpperCase();
+      } catch {
+        prev.textContent = "?";
+      }
+    }
     el.setHotkey.value = accelToLabel(settings.micHotkey);
     el.setHotkey.dataset.accel = settings.micHotkey || "";
     if (el.setDeafenHotkey) {
@@ -3243,6 +3805,19 @@
     }
     const dn = $("set-desktop-notify");
     if (dn) dn.checked = settings.desktopNotify !== false;
+    document.querySelectorAll('input[name="set-theme"]').forEach((r) => {
+      r.checked = r.value === (prefs.theme || "dark");
+    });
+    const setLang = $("set-language");
+    const setTf = $("set-time-format");
+    const setFs = $("set-font-scale");
+    const setFsVal = $("set-font-scale-val");
+    if (setLang) setLang.value = prefs.language || "tr";
+    if (setTf) setTf.value = prefs.timeFormat || "24";
+    if (setFs) {
+      setFs.value = String(prefs.fontScale || 100);
+      if (setFsVal) setFsVal.textContent = (prefs.fontScale || 100) + "%";
+    }
     if (el.appVersionLabel && api.appVersion) {
       api.appVersion().then((v) => {
         if (el.appVersionLabel) el.appVersionLabel.textContent = "Sürüm: v" + v;
@@ -3253,8 +3828,41 @@
         if (el.updateStatusLabel && s?.message) el.updateStatusLabel.textContent = s.message;
       }).catch(() => {});
     }
-    switchSettingsTab("sound");
+    switchSettingsTab("profile");
     el.modalSettings.hidden = false;
+  });
+
+  const btnSetChangeAv = $("btn-set-change-avatar");
+  const btnSetFrameAv = $("btn-set-frame-avatar");
+  if (btnSetChangeAv) {
+    btnSetChangeAv.addEventListener("click", async () => {
+      try {
+        const url = await api.pickAvatar(me.id);
+        if (url) {
+          setMyAvatar(url);
+          openAvatarFrameEditor(url);
+        }
+      } catch (e) {
+        alert(e.message || String(e));
+      }
+    });
+  }
+  if (btnSetFrameAv) {
+    btnSetFrameAv.addEventListener("click", () => openAvatarFrameEditor());
+  }
+  const setFs = $("set-font-scale");
+  if (setFs) {
+    setFs.addEventListener("input", () => {
+      const v = setFs.value;
+      const lab = $("set-font-scale-val");
+      if (lab) lab.textContent = v + "%";
+      applyFontScale(v);
+    });
+  }
+  document.querySelectorAll('input[name="set-theme"]').forEach((r) => {
+    r.addEventListener("change", () => {
+      if (r.checked) applyTheme(r.value);
+    });
   });
 
   if (el.btnCheckUpdates && api.checkForUpdates) {
@@ -3346,8 +3954,8 @@
     applyAvatarFrame(el.avatarEditImg, { x, y, scale: s }, { editor: true });
   }
 
-  async function openAvatarFrameEditor() {
-    const url = await api.getAvatar(me.id);
+  async function openAvatarFrameEditor(preferredUrl) {
+    const url = preferredUrl || (await api.getAvatar(me.id));
     if (!url) {
       await api.showMessage({
         title: "Profil",
@@ -3522,6 +4130,14 @@
     const soundNotifyEnabled = el.setSoundNotifyEnabled ? el.setSoundNotifyEnabled.checked : true;
     const soundMasterVolume = el.setSoundVol ? Number(el.setSoundVol.value) : 100;
     const desktopNotify = $("set-desktop-notify") ? $("set-desktop-notify").checked : true;
+    const theme =
+      document.querySelector('input[name="set-theme"]:checked')?.value || prefs.theme || "dark";
+    const language = $("set-language")?.value || prefs.language || "tr";
+    const timeFormat = $("set-time-format")?.value || prefs.timeFormat || "24";
+    const fontScale = Number($("set-font-scale")?.value || prefs.fontScale || 100);
+    const displayName = ($("set-display-name")?.value || "").trim();
+    const about = ($("set-about")?.value || "").trim();
+
     settings = await api.saveSettings(me.id, {
       micHotkey,
       deafenHotkey,
@@ -3533,9 +4149,34 @@
       soundNotifyEnabled,
       soundMasterVolume,
       desktopNotify,
+      theme,
+      language,
+      timeFormat,
+      fontScale,
     });
+    prefs = { theme, language, timeFormat, fontScale };
+    applyTheme(theme);
+    applyLanguage(language);
+    applyFontScale(fontScale);
     applyMicVolume(micVolume);
     rebuildSounds();
+
+    if (displayName || about !== undefined) {
+      try {
+        const patch = {};
+        if (displayName) patch.displayName = displayName;
+        patch.about = about;
+        if (cloudMode && window.HearthCloud?.isEnabled()) {
+          me = await window.HearthCloud.updateProfile(patch);
+        } else {
+          me = await api.updateProfile(me.id, patch);
+        }
+        el.myDisplay.textContent = me.displayName || me.username;
+      } catch (e) {
+        console.warn(e);
+      }
+    }
+
     try {
       if (snd.preview) {
         snd.preview.pause();

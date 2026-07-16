@@ -177,6 +177,10 @@ function getSettings(userId) {
     onboardingDone: false,
     friendsOnlineCollapsed: false,
     friendsOfflineCollapsed: false,
+    theme: "dark",
+    language: "tr",
+    timeFormat: "24",
+    fontScale: 100,
   });
 }
 

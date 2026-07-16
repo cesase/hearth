@@ -69,26 +69,47 @@
       <!-- Sol: arkadaş listesi -->
       <aside class="rail" id="app-rail">
         <div class="rail-brand rail-brand-logo-only">
-          <img class="logo-sm-img" src="assets/icon.png" alt="Hearth" title="Hearth" />
+          <button type="button" id="btn-logo-update" class="logo-update-btn" title="Hearth">
+            <img class="logo-sm-img" src="assets/icon.png" alt="Hearth" />
+            <span id="update-badge" class="update-badge" hidden title="Güncelleme var">↑</span>
+          </button>
           <small id="net-status" class="net-status-pill">…</small>
         </div>
 
-        <div class="status-row status-compact">
-          <select id="my-status-select" title="Durum">
-            <option value="online">🟢 Çevrimiçi</option>
-            <option value="idle">🌙 Boşta</option>
-            <option value="dnd">⛔ Rahatsız etme</option>
-            <option value="invisible">⚫ Görünmez</option>
+        <div class="status-row status-compact status-dropdown-wrap">
+          <details id="status-details" class="status-details">
+            <summary id="status-summary" class="status-summary">
+              <span id="status-summary-dot" class="status-dot online"></span>
+              <span id="status-summary-label" data-i18n="statusOnline">Çevrimiçi</span>
+            </summary>
+            <div class="status-panel">
+              <label class="status-opt"><input type="radio" name="my-status" value="online" checked /> <span data-i18n="statusOnline">Çevrimiçi</span></label>
+              <label class="status-opt"><input type="radio" name="my-status" value="idle" /> <span data-i18n="statusIdle">Boşta</span></label>
+              <label class="status-opt"><input type="radio" name="my-status" value="dnd" /> <span data-i18n="statusDnd">Rahatsız etme</span></label>
+              <label class="status-opt"><input type="radio" name="my-status" value="invisible" /> <span data-i18n="statusInvisible">Görünmez</span></label>
+              <label class="status-text-label" data-i18n="statusText">Durum yazısı</label>
+              <input id="my-status-text" type="text" maxlength="80" placeholder="…" />
+            </div>
+          </details>
+          <!-- Geriye uyumluluk: gizli select senkron -->
+          <select id="my-status-select" hidden>
+            <option value="online">online</option>
+            <option value="idle">idle</option>
+            <option value="dnd">dnd</option>
+            <option value="invisible">invisible</option>
           </select>
-          <!-- özel durum yazısı seçenek içinde / altında -->
-          <input id="my-status-text" type="text" maxlength="80" placeholder="Durum yazısı (isteğe bağlı)" />
+        </div>
+
+        <div id="friend-requests-box" class="friend-requests-box" hidden>
+          <div class="rail-section-title"><span data-i18n="friendRequests">İstekler</span></div>
+          <div id="friend-requests-list" class="friend-requests-list"></div>
         </div>
 
         <div class="rail-section-title">
-          <span>Arkadaşlar</span>
+          <span data-i18n="friends">Arkadaşlar</span>
           <div class="rail-section-actions">
-            <button type="button" id="btn-group-from-selection" class="icon-btn" title="Seçilenlerle grup / ara" hidden>📞</button>
-            <button type="button" id="btn-add-friend" class="icon-btn" title="Arkadaş ekle">＋</button>
+            <button type="button" id="btn-group-from-selection" class="icon-btn call-sel-btn" title="Seçilenlerle ara" hidden>📞</button>
+            <button type="button" id="btn-add-friend" class="icon-btn add-friend-btn" title="Arkadaş isteği" data-i18n-title="addFriend">＋</button>
           </div>
         </div>
         <div id="friend-list" class="friend-list"></div>
@@ -165,10 +186,18 @@
           <!-- Çağrı kontrolleri: yalnızca görüşmede burada -->
           <div class="in-call-controls" id="in-call-controls">
             <div class="ctrl-icons call-icons">
-              <button type="button" id="btn-mic" class="icon-ctrl active-mic" title="Mikrofon">🎤</button>
-              <button type="button" id="btn-deafen" class="icon-ctrl" title="Deafen">🔇</button>
-              <button type="button" id="btn-noise" class="icon-ctrl active-mic" title="Gürültü engelleme">🧹</button>
-              <button type="button" id="btn-screen" class="icon-ctrl" title="Ekran paylaş" disabled>🖥️</button>
+              <button type="button" id="btn-mic" class="icon-ctrl active-mic" title="Mikrofon">
+                <span class="ctrl-ico">🎤</span><span class="ctrl-label">Mic</span>
+              </button>
+              <button type="button" id="btn-deafen" class="icon-ctrl" title="Deafen">
+                <span class="ctrl-ico">🔇</span><span class="ctrl-label">Deaf</span>
+              </button>
+              <button type="button" id="btn-noise" class="icon-ctrl active-mic" title="Gürültü engelleme">
+                <span class="ctrl-ico">🧹</span><span class="ctrl-label">Noise</span>
+              </button>
+              <button type="button" id="btn-screen" class="icon-ctrl" title="Ekran paylaş" disabled>
+                <span class="ctrl-ico">🖥️</span><span class="ctrl-label">Share</span>
+              </button>
             </div>
             <div class="call-sliders">
               <label class="slider-label" title="Mikrofon"><span>🎤</span> <span id="mic-vol-val">100%</span>
@@ -271,31 +300,64 @@
     <!-- MODALS -->
     <div id="modal-add-friend" class="modal" hidden>
       <div class="modal-card">
-        <h2>Arkadaş ekle</h2>
-        <p class="hint">Arkadaşının <strong>kullanıcı adını</strong> yaz (kayıt olurken seçtiği @isim).</p>
-        <label>Kullanıcı adı
+        <h2 data-i18n="addFriendTitle">Arkadaş isteği</h2>
+        <p class="hint" data-i18n="addFriendHint">Kullanıcı adını yaz. Karşı taraf kabul ederse ikiniz de listede görünürsünüz.</p>
+        <label data-i18n="username">Kullanıcı adı
           <input id="add-friend-user" type="text" placeholder="ornek_kullanici" maxlength="20" />
         </label>
         <p id="add-friend-error" class="form-error" hidden></p>
         <div class="modal-actions">
-          <button type="button" class="btn soft" data-close="modal-add-friend">İptal</button>
-          <button type="button" id="btn-add-friend-go" class="btn primary">Ekle</button>
+          <button type="button" class="btn soft" data-close="modal-add-friend" data-i18n="cancel">İptal</button>
+          <button type="button" id="btn-add-friend-go" class="btn primary" data-i18n="sendRequest">İstek gönder</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="modal-file-offer" class="modal" hidden>
+      <div class="modal-card">
+        <h2 data-i18n="incomingFile">Gelen dosya</h2>
+        <p id="file-offer-text" class="hint"></p>
+        <div class="modal-actions">
+          <button type="button" id="btn-file-offer-reject" class="btn soft" data-i18n="reject">Reddet</button>
+          <button type="button" id="btn-file-offer-accept" class="btn primary" data-i18n="accept">Kabul et</button>
         </div>
       </div>
     </div>
 
     <div id="modal-settings" class="modal" hidden>
       <div class="modal-card settings-shell">
-        <h2>Ayarlar</h2>
+        <h2 data-i18n="settings">Ayarlar</h2>
         <div class="settings-layout">
           <nav class="settings-nav" id="settings-nav">
-            <button type="button" class="settings-nav-btn active" data-settings-tab="sound">🔊 Ses</button>
-            <button type="button" class="settings-nav-btn" data-settings-tab="keys">⌨️ Tuş</button>
-            <button type="button" class="settings-nav-btn" data-settings-tab="security">🔒 Güvenlik</button>
+            <button type="button" class="settings-nav-btn active" data-settings-tab="profile" data-i18n="tabProfile">👤 Profil</button>
+            <button type="button" class="settings-nav-btn" data-settings-tab="sound" data-i18n="tabSound">🔊 Ses</button>
+            <button type="button" class="settings-nav-btn" data-settings-tab="keys" data-i18n="tabKeys">⌨️ Tuş</button>
+            <button type="button" class="settings-nav-btn" data-settings-tab="theme" data-i18n="tabTheme">🎨 Tema</button>
+            <button type="button" class="settings-nav-btn" data-settings-tab="locale" data-i18n="tabLocale">🌐 Dil ve Zaman</button>
+            <button type="button" class="settings-nav-btn" data-settings-tab="a11y" data-i18n="tabA11y">♿ Erişilebilirlik</button>
+            <button type="button" class="settings-nav-btn" data-settings-tab="security" data-i18n="tabSecurity">🔒 Güvenlik</button>
           </nav>
           <div class="settings-panels">
-            <div class="settings-panel active" id="settings-tab-sound" data-settings-panel="sound">
-              <h3>Ses</h3>
+            <div class="settings-panel active" id="settings-tab-profile" data-settings-panel="profile">
+              <h3 data-i18n="tabProfile">Profil</h3>
+              <p class="hint" data-i18n="profileHint">Profil fotoğrafını buradan değiştirebilirsin.</p>
+              <div class="settings-profile-row">
+                <div class="avatar lg" id="set-profile-avatar-preview">?</div>
+                <div class="settings-profile-actions">
+                  <button type="button" id="btn-set-change-avatar" class="btn soft" data-i18n="changePhoto">Fotoğraf seç</button>
+                  <button type="button" id="btn-set-frame-avatar" class="btn soft" data-i18n="adjustPhoto">Kırp / sürükle</button>
+                </div>
+              </div>
+              <label data-i18n="displayName">Görünen ad
+                <input id="set-display-name" type="text" maxlength="32" />
+              </label>
+              <label data-i18n="about">Hakkında
+                <textarea id="set-about" rows="3" maxlength="200"></textarea>
+              </label>
+            </div>
+
+            <div class="settings-panel" id="settings-tab-sound" data-settings-panel="sound" hidden>
+              <h3 data-i18n="tabSound">Ses</h3>
               <p class="hint">Arama, aranma ve bildirim sesleri. Önizle ile dinle.</p>
               <div class="sound-settings-grid">
                 <label class="sound-row">
@@ -353,28 +415,61 @@
               </label>
             </div>
 
+            <div class="settings-panel" id="settings-tab-theme" data-settings-panel="theme" hidden>
+              <h3 data-i18n="tabTheme">Tema</h3>
+              <p class="hint" data-i18n="themeHint">Görünüm anında değişir. Varsayılan: koyu.</p>
+              <div class="theme-options">
+                <label class="theme-card"><input type="radio" name="set-theme" value="dark" checked /> <span>🌑 <span data-i18n="themeDark">Koyu</span></span></label>
+                <label class="theme-card"><input type="radio" name="set-theme" value="gray" /> <span>🌫️ <span data-i18n="themeGray">Gri</span></span></label>
+                <label class="theme-card"><input type="radio" name="set-theme" value="light" /> <span>☀️ <span data-i18n="themeLight">Açık</span></span></label>
+              </div>
+            </div>
+
+            <div class="settings-panel" id="settings-tab-locale" data-settings-panel="locale" hidden>
+              <h3 data-i18n="tabLocale">Dil ve Zaman</h3>
+              <label data-i18n="language">Dil
+                <select id="set-language">
+                  <option value="tr">Türkçe</option>
+                  <option value="en">English</option>
+                </select>
+              </label>
+              <label data-i18n="timeFormat">Saat biçimi
+                <select id="set-time-format">
+                  <option value="24">24 saat (14:30)</option>
+                  <option value="12">12 saat (2:30 PM)</option>
+                </select>
+              </label>
+            </div>
+
+            <div class="settings-panel" id="settings-tab-a11y" data-settings-panel="a11y" hidden>
+              <h3 data-i18n="tabA11y">Erişilebilirlik</h3>
+              <label class="slider-label"><span data-i18n="fontScale">Yazı boyutu</span> <span id="set-font-scale-val">100%</span></label>
+              <input id="set-font-scale" type="range" min="85" max="140" value="100" step="5" />
+              <p class="hint" data-i18n="fontScaleHint">Tüm arayüz yazılarını büyütür / küçültür.</p>
+            </div>
+
             <div class="settings-panel" id="settings-tab-security" data-settings-panel="security" hidden>
-              <h3>Güvenlik & hesap</h3>
-              <p class="hint">Bulut modunda hesap Supabase’de; yerel modda bu cihazda saklanır.</p>
-              <label>Kullanıcı adı<input id="set-username" type="text" disabled /></label>
-              <label>E-posta<input id="set-email" type="text" disabled /></label>
+              <h3 data-i18n="tabSecurity">Güvenlik & hesap</h3>
+              <p class="hint" data-i18n="securityHint">Bulut modunda hesap Supabase’de; yerel modda bu cihazda saklanır.</p>
+              <label data-i18n="username">Kullanıcı adı<input id="set-username" type="text" disabled /></label>
+              <label data-i18n="email">E-posta<input id="set-email" type="text" disabled /></label>
               <label class="check-row">
                 <input type="checkbox" id="set-desktop-notify" checked />
-                Masaüstü bildirimleri
+                <span data-i18n="desktopNotify">Masaüstü bildirimleri</span>
               </label>
-              <h3 style="margin-top:1.25rem">Uygulama</h3>
+              <h3 style="margin-top:1.25rem" data-i18n="appSection">Uygulama</h3>
               <p class="hint" id="app-version-label">Sürüm: …</p>
               <p class="hint tiny" id="update-status-label"></p>
-              <button type="button" id="btn-check-updates" class="btn soft">Güncellemeleri kontrol et</button>
-              <p class="hint">Oturumu kapatırsan bu cihazdaki oturum sona erer; sohbet geçmişi silinmez.</p>
-              <button type="button" id="btn-logout" class="btn danger">Çıkış yap</button>
+              <button type="button" id="btn-check-updates" class="btn soft" data-i18n="checkUpdates">Güncellemeleri kontrol et</button>
+              <p class="hint" data-i18n="logoutHint">Oturumu kapatırsan sohbet geçmişi silinmez.</p>
+              <button type="button" id="btn-logout" class="btn danger" data-i18n="logout">Çıkış yap</button>
             </div>
           </div>
         </div>
         <div class="modal-actions">
           <div style="flex:1"></div>
-          <button type="button" class="btn soft" data-close="modal-settings">Kapat</button>
-          <button type="button" id="btn-settings-save" class="btn primary">Kaydet</button>
+          <button type="button" class="btn soft" data-close="modal-settings" data-i18n="close">Kapat</button>
+          <button type="button" id="btn-settings-save" class="btn primary" data-i18n="save">Kaydet</button>
         </div>
       </div>
     </div>
