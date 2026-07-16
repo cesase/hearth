@@ -1615,33 +1615,51 @@
     applyVoiceVolume(pct);
   }
 
+  function setCtrlButton(btn, ico, label, className, title) {
+    if (!btn) return;
+    btn.className = className;
+    btn.title = title || "";
+    btn.innerHTML = `<span class="ctrl-ico">${ico}</span><span class="ctrl-label">${label}</span>`;
+  }
+
   function setMicUi() {
-    if (!el.btnMic) return;
-    el.btnMic.textContent = "🎤";
-    el.btnMic.title = micOn && !deafened ? "Mikrofon açık" : "Mikrofon kapalı";
-    el.btnMic.className =
-      "icon-ctrl " + (micOn && !deafened ? "active-mic" : "muted-mic");
+    setCtrlButton(
+      el.btnMic,
+      "🎤",
+      "Mic",
+      "icon-ctrl " + (micOn && !deafened ? "active-mic" : "muted-mic"),
+      micOn && !deafened ? "Mikrofon açık" : "Mikrofon kapalı"
+    );
   }
 
   function setDeafenUi() {
-    if (!el.btnDeafen) return;
-    el.btnDeafen.textContent = deafened ? "🔇" : "🔊";
-    el.btnDeafen.title = deafened ? "Deafen açık" : "Deafen kapalı";
-    el.btnDeafen.className = "icon-ctrl" + (deafened ? " deafened" : "");
+    setCtrlButton(
+      el.btnDeafen,
+      deafened ? "🔇" : "🔊",
+      "Deaf",
+      "icon-ctrl" + (deafened ? " deafened" : ""),
+      deafened ? "Deafen açık" : "Deafen kapalı"
+    );
   }
 
   function setNoiseUi() {
-    if (!el.btnNoise) return;
-    el.btnNoise.textContent = "🧹";
-    el.btnNoise.title = noiseOn ? "Gürültü engelleme açık" : "Gürültü engelleme kapalı";
-    el.btnNoise.className = "icon-ctrl" + (noiseOn ? " active-mic" : "");
+    setCtrlButton(
+      el.btnNoise,
+      "🧹",
+      "Noise",
+      "icon-ctrl" + (noiseOn ? " active-mic" : ""),
+      noiseOn ? "Gürültü engelleme açık" : "Gürültü engelleme kapalı"
+    );
   }
 
   function setScreenBtnUi() {
-    if (!el.btnScreen) return;
-    el.btnScreen.textContent = "🖥️";
-    el.btnScreen.title = screenStream ? "Paylaşımı durdur" : "Ekran paylaş";
-    el.btnScreen.className = "icon-ctrl" + (screenStream ? " active-mic" : "");
+    setCtrlButton(
+      el.btnScreen,
+      "🖥️",
+      "Share",
+      "icon-ctrl" + (screenStream ? " active-mic" : ""),
+      screenStream ? "Paylaşımı durdur" : "Ekran paylaş"
+    );
   }
 
   function toggleMic() {
@@ -1668,14 +1686,20 @@
       applyMicEnabled();
       setMicUi();
       // Hem çağrı hem ekran sesi kapansın
-      el.remoteAudio.volume = 0;
-      if (el.remoteScreenAudio) el.remoteScreenAudio.volume = 0;
-      el.remoteAudio.muted = true;
-      if (el.remoteScreenAudio) el.remoteScreenAudio.muted = true;
+      if (el.remoteAudio) {
+        el.remoteAudio.volume = 0;
+        el.remoteAudio.muted = true;
+      }
+      if (el.remoteScreenAudio) {
+        el.remoteScreenAudio.volume = 0;
+        el.remoteScreenAudio.muted = true;
+      }
+      setPeerVoicesMuted(true);
     } else {
       deafened = false;
-      el.remoteAudio.muted = false;
+      if (el.remoteAudio) el.remoteAudio.muted = false;
       if (el.remoteScreenAudio) el.remoteScreenAudio.muted = false;
+      setPeerVoicesMuted(false);
       applyVoiceVolume(preDeafenOutput || settings.outputVolume || 100);
       applyScreenAudioVolume(preDeafenScreenVol || settings.screenAudioVolume || 100);
       micOn = preDeafenMicOn;
