@@ -10,3 +10,5 @@ Thumbs.db
 .env.*
 GH_TOKEN
 *.local
+tests/artifacts/**
+!tests/artifacts/.gitkeep

@@ -12,7 +12,21 @@ const {
 } = require("electron");
 const path = require("path");
 const fs = require("fs");
+
+// UI laboratuvarı / smoke: ayrı userData (gerçek hesap bozulmaz)
+// app.ready ÖNCESİ set edilmeli
+if (process.env.HEARTH_USER_DATA) {
+  try {
+    const ud = path.resolve(process.env.HEARTH_USER_DATA);
+    fs.mkdirSync(ud, { recursive: true });
+    app.setPath("userData", ud);
+  } catch (e) {
+    console.warn("HEARTH_USER_DATA", e.message);
+  }
+}
+
 const storage = require("./storage");
+const IS_UI_TEST = process.env.HEARTH_UI_TEST === "1" || process.env.HEARTH_UI_TEST === "true";
 
 /** @type {import('electron-updater').AppUpdater | null} */
 let autoUpdater = null;
@@ -20,9 +34,14 @@ let updateCheckInFlight = false;
 let lastUpdateStatus = { state: "idle", message: "" };
 
 function setupAutoUpdater() {
-  // Sadece paketlenmiş uygulamada (kurulu Setup) anlamlı; dev'de sessiz atla
-  if (!app.isPackaged) {
-    lastUpdateStatus = { state: "dev", message: "Geliştirme modunda otomatik güncelleme yok." };
+  // UI test / geliştirme: güncelleme yok
+  if (IS_UI_TEST || !app.isPackaged) {
+    lastUpdateStatus = {
+      state: "dev",
+      message: IS_UI_TEST
+        ? "UI test modunda güncelleme kapalı."
+        : "Geliştirme modunda otomatik güncelleme yok.",
+    };
     return;
   }
   try {
@@ -194,6 +213,10 @@ function isPlaceholderKey(key) {
 }
 
 function loadCloudConfig() {
+  // Smoke / UI lab: her zaman yerel mod (Supabase ağı testleri bozmasın)
+  if (IS_UI_TEST) {
+    return { enabled: false, reason: "ui-test" };
+  }
   if (process.env.HEARTH_SUPABASE_URL && process.env.HEARTH_SUPABASE_ANON_KEY) {
     return {
       enabled: true,
@@ -296,6 +319,11 @@ function createWindow() {
   win.once("ready-to-show", () => win.show());
 
   win.on("close", (e) => {
+    // UI lab / test: tepsiye indirme, tamamen çık
+    if (IS_UI_TEST) {
+      app.isQuitting = true;
+      return;
+    }
     if (!app.isQuitting) {
       e.preventDefault();
       win.hide();
@@ -441,7 +469,7 @@ app.whenReady().then(() => {
     const ip = appIconPath();
     if (win && ip && typeof win.setIcon === "function") win.setIcon(ip);
   } catch {}
-  createTray();
+  if (!IS_UI_TEST) createTray();
   setupDisplayMedia();
   setupAutoUpdater();
   const session = storage.currentSession();

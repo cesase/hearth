@@ -21,6 +21,15 @@ npm run setup      # dist/Hearth-Setup.exe
 npm run pack       # dist/Hearth-Portable.exe
 ```
 
+### UI laboratuvarı (arayüzü robot ile dene)
+
+```bash
+npm run ui:smoke   # otomatik tıkla + screenshot
+npm run ui:lab     # aynı, pencereyi sen de gör
+```
+
+Detay: `tests/README.md` · çıktı: `tests/artifacts/latest.png`
+
 ### GitHub (cesase)
 
 - Repo: https://github.com/cesase/hearth  

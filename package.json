@@ -1,6 +1,6 @@
 {
   "name": "hearth",
-  "version": "4.1.1",
+  "version": "4.2.0",
   "description": "Hearth - P2P sesli sohbet, ekran ve dosya",
   "main": "main.js",
   "author": "Faruk",
@@ -14,7 +14,10 @@
     "pack": "electron-builder --win portable --x64",
     "setup": "electron-builder --win nsis --x64",
     "dist": "electron-builder --win portable nsis --x64",
-    "publish:win": "electron-builder --win nsis --x64 --publish always"
+    "publish:win": "electron-builder --win nsis --x64 --publish always",
+    "ui:smoke": "node tests/ui/smoke.spec.js",
+    "ui:lab": "node tests/ui/smoke.spec.js --headed",
+    "ui:scenario": "node tests/ui/run-scenario.js"
   },
   "build": {
     "appId": "com.hearth.app",
@@ -75,7 +78,8 @@
   },
   "devDependencies": {
     "electron": "^33.4.11",
-    "electron-builder": "^25.1.8"
+    "electron-builder": "^25.1.8",
+    "playwright": "^1.49.1"
   },
   "dependencies": {
     "electron-updater": "^6.8.9"
