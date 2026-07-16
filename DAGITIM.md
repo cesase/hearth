@@ -15,23 +15,16 @@ Kullanıcı **tek Setup.exe** indirir → klasör seçer → masaüstü ikonu ge
 
 ## 1) GitHub bilgilerini doldur (zorunlu)
 
-Aynı `OWNER` / `REPO` değerlerini üç yere yaz:
+**Bu proje için ayarlı hesap:**
 
-1. **`website/config.js`**
-   ```js
-   owner: "senin-kullanici-adin",
-   repo: "hearth",
-   ```
-2. **`package.json`**
-   - `"repository.url"`
-   - `build.publish[0].owner` ve `repo`
-3. İsteğe: README linkleri
+| | |
+|--|--|
+| GitHub | `cesase` |
+| Repo | https://github.com/cesase/hearth |
+| Site | https://cesase.github.io/hearth/ |
+| İndirme | https://github.com/cesase/hearth/releases/latest/download/Hearth-Setup.exe |
 
-Örnek indirme adresi:
-
-```text
-https://github.com/SENIN/hearth/releases/latest/download/Hearth-Setup.exe
-```
+(`website/config.js` ve `package.json` buna göre dolu.)
 
 ---
 

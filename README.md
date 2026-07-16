@@ -21,12 +21,11 @@ npm run setup      # dist/Hearth-Setup.exe
 npm run pack       # dist/Hearth-Portable.exe
 ```
 
-### GitHub ayarı (site + auto-update)
+### GitHub (cesase)
 
-`OWNER` / `REPO` değerlerini şuralarda kendi hesabınla değiştir:
-
-- `website/config.js`
-- `package.json` → `repository` ve `build.publish`
+- Repo: https://github.com/cesase/hearth  
+- Site: https://cesase.github.io/hearth/  
+- `website/config.js` ve `package.json` publish ayarları `cesase/hearth`
 
 ### Otomatik güncelleme
 
