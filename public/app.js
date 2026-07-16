@@ -418,42 +418,7 @@
     }
   }
 
-  const I18N = {
-    tr: {
-      statusOnline: "Çevrimiçi",
-      statusIdle: "Boşta",
-      statusDnd: "Rahatsız etme",
-      statusInvisible: "Görünmez",
-      friends: "Arkadaşlar",
-      friendRequests: "İstekler",
-      online: "Çevrimiçi",
-      offline: "Çevrimdışı",
-      busy: "Görüşmede",
-      accept: "Kabul",
-      reject: "Reddet",
-      sendRequest: "İstek gönder",
-      requestSent: "Arkadaşlık isteği gönderildi.",
-      requestAccepted: "Arkadaşlık kabul edildi.",
-      updateReady: "Güncelleme hazır — tıkla",
-    },
-    en: {
-      statusOnline: "Online",
-      statusIdle: "Idle",
-      statusDnd: "Do not disturb",
-      statusInvisible: "Invisible",
-      friends: "Friends",
-      friendRequests: "Requests",
-      online: "Online",
-      offline: "Offline",
-      busy: "In a call",
-      accept: "Accept",
-      reject: "Decline",
-      sendRequest: "Send request",
-      requestSent: "Friend request sent.",
-      requestAccepted: "Friend request accepted.",
-      updateReady: "Update ready — click",
-    },
-  };
+  const I18N = window.HEARTH_I18N || { tr: {}, en: {} };
 
   function t(key) {
     const lang = prefs.language || "tr";
@@ -464,6 +429,8 @@
     const th = theme || prefs.theme || "dark";
     prefs.theme = th;
     document.documentElement.setAttribute("data-theme", th);
+    // Electron pencere arka planı
+    document.body.style.background = getComputedStyle(document.documentElement).getPropertyValue("--bg-0") || "";
   }
 
   function applyFontScale(scale) {
@@ -472,6 +439,34 @@
     document.documentElement.style.setProperty("--font-scale", String(s / 100));
   }
 
+  /** id → i18n key for static chrome */
+  const UI_TEXT_MAP = {
+    "btn-call": "call",
+    "btn-hangup": "hangup",
+    "btn-send": "send",
+    "btn-logout": "logout",
+    "btn-settings-save": "save",
+    "btn-add-friend-go": "sendRequest",
+    "btn-file-offer-accept": "accept",
+    "btn-file-offer-reject": "reject",
+    "btn-check-updates": "checkUpdates",
+    "btn-onboard-done": "onboardingDone",
+    "btn-set-change-avatar": "changePhoto",
+    "btn-set-frame-avatar": "adjustPhoto",
+    "peer-title": "pickChat",
+    "peer-sub": "pickChatHint",
+    "remote-ph": "noScreen",
+    "local-ph": "you",
+    "remote-tag": "friend",
+  };
+  const UI_PLACEHOLDER_MAP = {
+    "chat-input": "messagePh",
+    "chat-search": "searchChat",
+    "gif-search": "gifSearch",
+    "my-status-text": "statusText",
+    "add-friend-user": "username",
+  };
+
   function applyLanguage(lang) {
     prefs.language = lang === "en" ? "en" : "tr";
     document.documentElement.lang = prefs.language;
@@ -479,17 +474,76 @@
       const k = node.getAttribute("data-i18n");
       if (!k) return;
       const val = t(k);
-      if (val && val !== k) {
-        if (node.tagName === "INPUT" || node.tagName === "TEXTAREA") {
-          /* placeholder handled separately */
-        } else if (node.children.length && node.querySelector("input,select,textarea")) {
-          /* label with control inside — skip full replace */
-        } else {
-          node.textContent = val;
+      if (!val || val === k) return;
+      // label with nested input: only update first text node or data-i18n-label span
+      const span = node.querySelector("[data-i18n-label]");
+      if (span) {
+        span.textContent = val;
+        return;
+      }
+      if (node.children.length && node.querySelector("input,select,textarea,button")) {
+        // keep structure; set title
+        node.setAttribute("data-i18n-applied", val);
+        return;
+      }
+      node.textContent = val;
+    });
+    document.querySelectorAll("[data-i18n-placeholder]").forEach((node) => {
+      const k = node.getAttribute("data-i18n-placeholder");
+      if (k && t(k)) node.placeholder = t(k);
+    });
+    for (const [id, key] of Object.entries(UI_TEXT_MAP)) {
+      const n = $(id);
+      if (n && t(key)) {
+        if (n.tagName === "BUTTON" || n.tagName === "SPAN" || n.tagName === "P" || n.tagName === "H2" || n.tagName === "H3" || n.tagName === "SMALL") {
+          // preserve structure for icon buttons with children
+          if (n.querySelector(".ctrl-label")) continue;
+          if (!n.querySelector("img,input,select")) n.textContent = t(key);
+        }
+      }
+    }
+    for (const [id, key] of Object.entries(UI_PLACEHOLDER_MAP)) {
+      const n = $(id);
+      if (n && t(key)) n.placeholder = t(key);
+    }
+    // tabs auth
+    document.querySelectorAll(".tab[data-tab='login']").forEach((b) => (b.textContent = t("login")));
+    document.querySelectorAll(".tab[data-tab='register']").forEach((b) => (b.textContent = t("register")));
+    const fl = $("form-login")?.querySelector("button[type=submit]");
+    if (fl) fl.textContent = t("loginBtn");
+    const fr = $("form-register")?.querySelector("button[type=submit]");
+    if (fr) fr.textContent = t("registerBtn");
+    // layout select options
+    if (el.mediaLayout) {
+      const opts = el.mediaLayout.options;
+      if (opts[0]) opts[0].textContent = t("layoutBoth");
+      if (opts[1]) opts[1].textContent = t("layoutRemote");
+      if (opts[2]) opts[2].textContent = t("layoutLocal");
+    }
+    const sizeLab = document.querySelector(".media-size-label");
+    if (sizeLab) {
+      const txt = sizeLab.childNodes[0];
+      if (txt && txt.nodeType === 3) txt.textContent = t("size") + " ";
+    }
+    document.querySelectorAll(".groups-pane-header h3").forEach((h) => (h.textContent = t("groups")));
+    document.querySelectorAll("[data-close]").forEach((b) => {
+      if (b.classList.contains("btn") && !b.querySelector("img")) {
+        const k = b.getAttribute("data-close");
+        if (b.textContent.trim().match(/Kapat|Close|İptal|Cancel/i)) {
+          b.textContent = /avatar|add-friend|screen/i.test(k || "") ? t("cancel") : t("close");
         }
       }
     });
+    // time format options
+    const tf = $("set-time-format");
+    if (tf && tf.options.length >= 2) {
+      tf.options[0].textContent = t("time24");
+      tf.options[1].textContent = t("time12");
+    }
     syncStatusSummary();
+    renderFriends();
+    renderFriendRequests();
+    renderGroups();
   }
 
   function formatMsgTime(ts) {
@@ -745,26 +799,24 @@
   function applyAvatarFrame(imgEl, frame, { editor = false } = {}) {
     if (!imgEl) return;
     const f = frame || settings.avatarFrame || { x: 50, y: 50, scale: 1 };
-    const x = f.x ?? 50;
-    const y = f.y ?? 50;
-    const s = Math.max(1, Math.min(3, f.scale ?? 1));
-    imgEl.style.objectFit = "cover";
+    const x = Number(f.x ?? 50);
+    const y = Number(f.y ?? 50);
+    const s = Math.max(1, Math.min(3, Number(f.scale ?? 1)));
+    imgEl.draggable = false;
+    imgEl.style.userSelect = "none";
+    imgEl.style.pointerEvents = "none";
     imgEl.style.position = "absolute";
+    imgEl.style.maxWidth = "none";
+    imgEl.style.objectFit = "cover";
+    // Sürükleme: translate yüzde kaydırma + scale
+    const dx = ((x - 50) / 50) * 40; // -40% .. +40%
+    const dy = ((y - 50) / 50) * 40;
     imgEl.style.left = "50%";
     imgEl.style.top = "50%";
     imgEl.style.width = `${100 * s}%`;
     imgEl.style.height = `${100 * s}%`;
-    // object-position ile kaydırma + scale
-    imgEl.style.objectPosition = `${x}% ${y}%`;
-    imgEl.style.transform = "translate(-50%, -50%)";
-    imgEl.style.maxWidth = "none";
-    imgEl.style.userSelect = "none";
-    imgEl.draggable = false;
-    if (!editor) {
-      // küçük avatarlarda da aynı mantık
-      imgEl.style.width = `${100 * s}%`;
-      imgEl.style.height = `${100 * s}%`;
-    }
+    imgEl.style.transform = `translate(calc(-50% + ${dx}%), calc(-50% + ${dy}%))`;
+    imgEl.style.objectPosition = "center center";
   }
 
   function setMyAvatar(url) {
@@ -796,12 +848,17 @@
 
   function setMediaHeight(h) {
     const v = Math.max(140, Math.min(520, Number(h) || 220));
+    document.documentElement.style.setProperty("--media-h", v + "px");
     if (el.mediaDock) {
       el.mediaDock.style.setProperty("--media-h", v + "px");
       el.mediaDock.style.flex = "0 0 auto";
+      el.mediaDock.style.maxHeight = "none";
     }
-    if (el.mediaVideos) {
-      el.mediaVideos.style.height = v + "px";
+    const vids = el.mediaVideos || $("media-videos");
+    if (vids) {
+      vids.style.height = v + "px";
+      vids.style.minHeight = v + "px";
+      vids.style.maxHeight = "none";
     }
     if (el.mediaHeight) el.mediaHeight.value = String(v);
   }
@@ -874,9 +931,21 @@
     if (st === "online") {
       if (remoteSt === "dnd") return t("statusDnd");
       if (remoteSt === "idle") return t("statusIdle");
+      if (remoteSt === "invisible") return t("statusInvisible");
       return t("online");
     }
     return t("offline");
+  }
+
+  /** Dot class from presence + remote status */
+  function friendDotClass(f, st) {
+    if (st === "busy") return "busy";
+    if (st === "offline") return "off";
+    const rs = f.remoteStatus || "online";
+    if (rs === "dnd") return "dnd";
+    if (rs === "idle") return "idle";
+    if (rs === "invisible") return "off";
+    return "on";
   }
 
   function updateGroupSelectionUi() {
@@ -919,7 +988,7 @@
 
     const meta = document.createElement("div");
     meta.className = "meta";
-    const dotCls = st === "busy" ? "busy" : st === "online" ? "on" : "";
+    const dotCls = friendDotClass(f, st);
     meta.innerHTML = `<div class="name"></div><div class="sub"><span class="dot ${dotCls}"></span><span></span></div>`;
     meta.querySelector(".name").textContent = f.displayName || f.username;
     meta.querySelector(".sub span:last-child").textContent =
@@ -2187,8 +2256,18 @@
       const groupId = call.metadata && call.metadata.groupId;
 
       if (kind === "screen") {
-        call.answer();
-        call.on("stream", (stream) => onMediaStream(stream, { isScreen: true, fromUser }));
+        call.answer(); // alıcı stream göndermez
+        call.on("stream", (stream) => {
+          // Video + loopback ses ayrı elemanlara
+          onMediaStream(stream, { isScreen: true, fromUser });
+          const atracks = stream.getAudioTracks();
+          if (atracks.length && el.remoteScreenAudio) {
+            el.remoteScreenAudio.srcObject = new MediaStream(atracks);
+            el.remoteScreenAudio.muted = !!deafened;
+            el.remoteScreenAudio.volume = Math.min(1, (settings.screenAudioVolume ?? 100) / 100);
+            el.remoteScreenAudio.play().catch(() => {});
+          }
+        });
         call.on("close", () => {
           el.remoteVideo.srcObject = null;
           el.remotePh.hidden = false;
@@ -2340,10 +2419,20 @@
   }
 
   async function sendFile(preselected) {
-    if (!activeFriend || sendFileBusy) return;
+    if (!activeFriend) {
+      renderMessage({ type: "system", text: t("selectChatFirst") });
+      return;
+    }
+    // Önceki transfer kilitli kaldıysa serbest bırak (decline sonrası)
+    if (sendFileBusy) {
+      sendFileBusy = false;
+      transferCancelled = false;
+      activeTransferId = null;
+      hideTransfer();
+    }
     const conn = conns.get(activeFriend);
     if (!conn || !conn.open) {
-      renderMessage({ type: "system", text: "Dosya için arkadaş çevrimiçi olmalı." });
+      renderMessage({ type: "system", text: t("fileNeedOnline") });
       return;
     }
     const file = preselected || (await api.pickFile());
@@ -2353,9 +2442,18 @@
     transferCancelled = false;
     const id = crypto.randomUUID();
     activeTransferId = id;
-    // 48KB chunk + kaydırmalı pencere → ~50 Mbit upload'a yaklaşır
     const chunkSize = 48 * 1024;
     const WINDOW = 16;
+
+    // Decline anında beklemeden çık
+    const onAbortEv = (ev) => {
+      const m = ev.detail;
+      if (m && m.id === id) {
+        transferCancelled = true;
+        window.dispatchEvent(new CustomEvent("file-ready", { detail: { id, aborted: true } }));
+      }
+    };
+    window.addEventListener("file-abort", onAbortEv);
 
     try {
       const mKind = mediaKind(file.name);
@@ -2367,15 +2465,18 @@
         mime: "application/octet-stream",
         mediaKind: mKind,
       });
-      showTransfer(`Gönderiliyor: ${file.name}`, 0, `0 / ${fmtSize(file.size)}`);
+      showTransfer(`${t("fileSending")}: ${file.name}`, 0, `0 / ${fmtSize(file.size)}`);
       renderMessage({
         type: "system",
-        text: `Gönderiliyor: ${file.name} (${fmtSize(file.size)})…`,
+        text: `${t("fileSending")}: ${file.name} (${fmtSize(file.size)})…`,
       });
 
-      const ready = await waitEvent("file-ready", (m) => m && m.id === id, 30000);
-      if (!ready || transferCancelled) {
-        renderMessage({ type: "system", text: transferCancelled ? "Gönderim iptal." : "Alıcı hazır değil." });
+      const ready = await waitEvent("file-ready", (m) => m && m.id === id, 120000);
+      if (!ready || ready.aborted || transferCancelled) {
+        renderMessage({
+          type: "system",
+          text: transferCancelled || ready?.aborted ? t("fileRejected") : t("fileNotReady"),
+        });
         hideTransfer();
         return;
       }
@@ -2428,8 +2529,7 @@
 
       if (transferCancelled) throw new Error("İptal edildi");
       sendTo(activeFriend, { type: "file-end", id });
-      showTransfer(`Gönderildi: ${file.name}`, 100, fmtSize(file.size));
-      setTimeout(hideTransfer, 2000);
+      showTransfer(`✓ ${file.name}`, 100, fmtSize(file.size));
 
       let previewUrl = null;
       if (mKind === "image" || mKind === "video") {
@@ -2450,12 +2550,16 @@
         displayName: me.displayName,
         ts: Date.now(),
       });
+      setTimeout(hideTransfer, 1500);
     } catch (e) {
       console.error(e);
-      sendTo(activeFriend, { type: "file-abort", id });
+      try {
+        sendTo(activeFriend, { type: "file-abort", id });
+      } catch {}
       hideTransfer();
       renderMessage({ type: "system", text: "Dosya: " + (e.message || e) });
     } finally {
+      window.removeEventListener("file-abort", onAbortEv);
       sendFileBusy = false;
       activeTransferId = null;
       transferCancelled = false;
@@ -2999,11 +3103,21 @@
           const video = qualityConstraints(q, fps);
 
           const wantSysAudio = !!(el.screenSystemAudio && el.screenSystemAudio.checked);
-          // Electron: video:true / audio:bool — karmaşık constraint ile ses capture kırılıyor
+          // Electron: audio true → main setDisplayMediaRequestHandler loopback
           try {
             screenStream = await navigator.mediaDevices.getDisplayMedia({
-              video: true,
-              audio: wantSysAudio,
+              video: {
+                width: video.width,
+                height: video.height,
+                frameRate: video.frameRate,
+              },
+              audio: wantSysAudio
+                ? {
+                    echoCancellation: false,
+                    noiseSuppression: false,
+                    autoGainControl: false,
+                  }
+                : false,
             });
           } catch (err1) {
             if (wantSysAudio) {
@@ -3012,10 +3126,7 @@
                 video: true,
                 audio: false,
               });
-              renderMessage({
-                type: "system",
-                text: "Sistem sesi alınamadı; ekran görüntüsü paylaşılıyor.",
-              });
+              renderMessage({ type: "system", text: t("screenNoAudio") });
             } else {
               throw err1;
             }
@@ -3029,27 +3140,46 @@
               frameRate: { ideal: fps, max: fps },
             });
           } catch {}
-          try {
-            if (!showCursor && track.getSettings) {
-              /* cursor never — destek yoksa yoksay */
-            }
-          } catch {}
           screenStream.getAudioTracks().forEach((t) => {
             try {
+              t.enabled = true;
               t.contentHint = "music";
             } catch {}
           });
 
+          // Video + sistem sesi birlikte gönder (tek PeerJS call)
           for (const target of targets) {
             try {
               const pid = await peerIdOf(target);
               const sc = peer.call(pid, screenStream, {
-                metadata: { kind: "screen", from: me.username },
+                metadata: {
+                  kind: "screen",
+                  from: me.username,
+                  hasAudio: screenStream.getAudioTracks().length > 0,
+                },
               });
               if (sc) {
                 if (!screenCall) screenCall = sc;
                 screenCalls.set(target, sc);
                 setTimeout(() => optimizeScreenSender(sc, q, fps), 400);
+                // Ses track'inin de gönderildiğinden emin ol
+                setTimeout(() => {
+                  try {
+                    const pc = sc.peerConnection || sc._pc || sc.pc;
+                    if (!pc) return;
+                    const senders = pc.getSenders();
+                    const hasAudioSender = senders.some((s) => s.track && s.track.kind === "audio");
+                    if (!hasAudioSender) {
+                      screenStream.getAudioTracks().forEach((at) => {
+                        try {
+                          pc.addTrack(at, screenStream);
+                        } catch {}
+                      });
+                    }
+                  } catch (e) {
+                    console.warn("screen audio sender", e);
+                  }
+                }, 600);
               }
             } catch (e) {
               console.warn("screen to", target, e);
@@ -3064,9 +3194,7 @@
           const hasAudio = screenStream.getAudioTracks().length > 0;
           renderMessage({
             type: "system",
-            text: hasAudio
-              ? "Ekran + sistem sesi paylaşılıyor."
-              : "Ekran paylaşılıyor.",
+            text: hasAudio ? t("screenSharingAudio") : t("screenSharing"),
           });
         } catch (err) {
           renderMessage({ type: "system", text: "Ekran paylaşılamadı: " + (err.message || err) });
@@ -3997,38 +4125,40 @@
   }
 
   if (el.avatarFramePreview && el.avatarEditImg) {
-    el.avatarFramePreview.addEventListener("pointerdown", (e) => {
-      e.preventDefault();
-      avatarDrag = {
-        x0: e.clientX,
-        y0: e.clientY,
-        ox: Number(el.avX.value || 50),
-        oy: Number(el.avY.value || 50),
-      };
-      el.avatarFramePreview.classList.add("dragging");
-      el.avatarFramePreview.setPointerCapture?.(e.pointerId);
-    });
-    el.avatarFramePreview.addEventListener("pointermove", (e) => {
+    const onMove = (e) => {
       if (!avatarDrag) return;
+      e.preventDefault();
       const dx = e.clientX - avatarDrag.x0;
       const dy = e.clientY - avatarDrag.y0;
-      // daire içinde kaydır
-      const nx = Math.max(0, Math.min(100, avatarDrag.ox - dx * 0.35));
-      const ny = Math.max(0, Math.min(100, avatarDrag.oy - dy * 0.35));
-      el.avX.value = String(Math.round(nx));
-      el.avY.value = String(Math.round(ny));
+      // daha hassas sürükleme
+      const nx = Math.max(0, Math.min(100, avatarDrag.ox - dx * 0.45));
+      const ny = Math.max(0, Math.min(100, avatarDrag.oy - dy * 0.45));
+      if (el.avX) el.avX.value = String(Math.round(nx));
+      if (el.avY) el.avY.value = String(Math.round(ny));
       refreshAvatarEditorPreview();
-    });
-    const endDrag = (e) => {
+    };
+    const endDrag = () => {
       if (!avatarDrag) return;
       avatarDrag = null;
       el.avatarFramePreview.classList.remove("dragging");
-      try {
-        el.avatarFramePreview.releasePointerCapture?.(e.pointerId);
-      } catch {}
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", endDrag);
+      window.removeEventListener("pointercancel", endDrag);
     };
-    el.avatarFramePreview.addEventListener("pointerup", endDrag);
-    el.avatarFramePreview.addEventListener("pointercancel", endDrag);
+    el.avatarFramePreview.addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      avatarDrag = {
+        x0: e.clientX,
+        y0: e.clientY,
+        ox: Number(el.avX?.value || 50),
+        oy: Number(el.avY?.value || 50),
+      };
+      el.avatarFramePreview.classList.add("dragging");
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", endDrag);
+      window.addEventListener("pointercancel", endDrag);
+    });
   }
 
   if (el.btnFrameAvatar) {
@@ -4247,6 +4377,38 @@
       if (m) m.hidden = true;
     });
   });
+
+  /** Modal: dışarı tık + ESC ile kapat */
+  function closeTopModal() {
+    const open = [...document.querySelectorAll(".modal:not([hidden])")];
+    if (!open.length) return false;
+    const m = open[open.length - 1];
+    m.hidden = true;
+    // file offer açıkken ESC = reddet
+    if (m.id === "modal-file-offer" && mediaOfferResolve) closeMediaOffer(false);
+    return true;
+  }
+  document.querySelectorAll(".modal").forEach((modal) => {
+    modal.addEventListener("mousedown", (e) => {
+      // Sadece backdrop (modal'ın kendisi), kart değil
+      if (e.target === modal) {
+        if (modal.id === "modal-file-offer") closeMediaOffer(false);
+        else modal.hidden = true;
+      }
+    });
+  });
+  window.addEventListener(
+    "keydown",
+    (e) => {
+      if (e.key === "Escape") {
+        if (closeTopModal()) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+      }
+    },
+    true
+  );
 
   api.onMicHotkey(() => toggleMic());
   if (api.onDeafenHotkey) api.onDeafenHotkey(() => toggleDeafen());

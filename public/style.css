@@ -2374,3 +2374,208 @@ html body { font-size: calc(var(--fs-body) * var(--font-scale)); }
   outline-offset: -6px;
   background: var(--accent-dim);
 }
+
+/* ===== Status dots by state ===== */
+.friend-item .dot,
+.status-dot,
+.sub .dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #6b7280;
+  flex-shrink: 0;
+}
+.friend-item .dot.on, .status-dot.online, .sub .dot.on { background: #23a559; box-shadow: 0 0 0 2px rgba(35,165,89,.25); }
+.friend-item .dot.idle, .status-dot.idle, .sub .dot.idle { background: #f0b232; box-shadow: 0 0 0 2px rgba(240,178,50,.25); }
+.friend-item .dot.dnd, .status-dot.dnd, .sub .dot.dnd { background: #f23f43; box-shadow: 0 0 0 2px rgba(242,63,67,.25); }
+.friend-item .dot.busy, .status-dot.busy, .sub .dot.busy { background: #a78bfa; box-shadow: 0 0 0 2px rgba(167,139,250,.3); }
+.friend-item .dot.off, .status-dot.invisible, .sub .dot.off { background: #6b7280; opacity: 0.7; }
+
+/* Status dropdown polish */
+.status-row.status-compact {
+  padding: 0 10px 10px;
+}
+.status-summary {
+  gap: 10px;
+  min-height: 40px;
+  align-items: center;
+}
+.status-summary .status-dot {
+  width: 10px;
+  height: 10px;
+}
+.status-panel {
+  padding: 8px;
+}
+.status-opt {
+  min-height: 36px;
+  align-items: center;
+}
+.status-panel #my-status-text {
+  margin-top: 6px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--bg-0);
+  color: var(--text);
+}
+
+/* ===== LIGHT THEME (full rewrite) ===== */
+html[data-theme="light"] {
+  --bg-0: #eef0f4;
+  --bg-1: #f7f8fb;
+  --bg-2: #ffffff;
+  --bg-3: #e8ebf2;
+  --bg-4: #dce1ea;
+  --surface: #ffffff;
+  --line: #cfd5e0;
+  --text: #1b1f2a;
+  --muted: #5c6578;
+  --accent: #5b4fd1;
+  --accent-2: #6c5ce7;
+  --accent-dim: rgba(91, 79, 209, 0.12);
+  --green: #1a9b4a;
+  --green-dim: rgba(26, 155, 74, 0.14);
+  --red: #e0353a;
+  --red-dim: rgba(224, 53, 58, 0.12);
+  --yellow: #d4a017;
+  --shadow: 0 10px 32px rgba(20, 24, 40, 0.12);
+  color-scheme: light;
+}
+html[data-theme="light"] body,
+html[data-theme="light"] .view,
+html[data-theme="light"] .app-view,
+html[data-theme="light"] .rail,
+html[data-theme="light"] .stage,
+html[data-theme="light"] .groups-pane,
+html[data-theme="light"] .auth-view {
+  background: var(--bg-0);
+  color: var(--text);
+}
+html[data-theme="light"] .rail {
+  background: var(--bg-1);
+  border-right: 1px solid var(--line);
+}
+html[data-theme="light"] .groups-pane {
+  background: var(--bg-1);
+  border-left: 1px solid var(--line);
+}
+html[data-theme="light"] .stage {
+  background: var(--bg-0);
+}
+html[data-theme="light"] .stage-header,
+html[data-theme="light"] .composer,
+html[data-theme="light"] .rail-me,
+html[data-theme="light"] .media-dock,
+html[data-theme="light"] .modal-card,
+html[data-theme="light"] .auth-card,
+html[data-theme="light"] .onboarding-card {
+  background: var(--bg-2);
+  border-color: var(--line);
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+html[data-theme="light"] .friend-item,
+html[data-theme="light"] .group-item,
+html[data-theme="light"] .settings-nav-btn,
+html[data-theme="light"] .status-summary,
+html[data-theme="light"] .status-panel,
+html[data-theme="light"] .friend-request-row,
+html[data-theme="light"] .theme-card,
+html[data-theme="light"] .msg {
+  background: var(--bg-2);
+  border-color: var(--line);
+  color: var(--text);
+}
+html[data-theme="light"] .friend-item.active,
+html[data-theme="light"] .group-item.active,
+html[data-theme="light"] .settings-nav-btn.active {
+  background: var(--accent-dim);
+  border-color: rgba(91, 79, 209, 0.35);
+}
+html[data-theme="light"] .msg.mine {
+  background: linear-gradient(135deg, rgba(91, 79, 209, 0.18), rgba(108, 92, 231, 0.1));
+  border-color: rgba(91, 79, 209, 0.3);
+}
+html[data-theme="light"] .msg.system {
+  color: var(--muted);
+  background: transparent;
+  border: none;
+}
+html[data-theme="light"] input,
+html[data-theme="light"] select,
+html[data-theme="light"] textarea,
+html[data-theme="light"] .icon-btn,
+html[data-theme="light"] .btn.soft {
+  background: var(--bg-1);
+  border: 1px solid var(--line);
+  color: var(--text);
+}
+html[data-theme="light"] .btn.primary {
+  color: #fff;
+}
+html[data-theme="light"] .muted,
+html[data-theme="light"] .hint,
+html[data-theme="light"] .ctrl-label {
+  color: var(--muted);
+}
+html[data-theme="light"] .chat-log {
+  background: transparent;
+}
+html[data-theme="light"] .vid {
+  background: #111;
+  border-color: var(--line);
+}
+html[data-theme="light"] .auth-view {
+  background:
+    radial-gradient(900px 480px at 12% -8%, rgba(108, 92, 231, 0.18), transparent 55%),
+    var(--bg-0);
+}
+html[data-theme="light"] .modal {
+  background: rgba(15, 18, 28, 0.35);
+}
+html[data-theme="light"] .empty-state,
+html[data-theme="light"] .empty-friends {
+  color: var(--muted);
+}
+
+/* Media height must obey slider */
+.media-dock {
+  max-height: none !important;
+  flex: 0 0 auto !important;
+}
+.media-videos {
+  height: var(--media-h, 220px) !important;
+  min-height: 120px !important;
+  max-height: none !important;
+  transition: height 0.1s ease;
+}
+
+/* Avatar editor drag */
+.avatar-frame-preview {
+  touch-action: none;
+  cursor: grab;
+  user-select: none;
+  position: relative;
+  overflow: hidden;
+  width: 200px;
+  height: 200px;
+  border-radius: 50%;
+  margin: 0 auto 12px;
+  background: var(--bg-0);
+  border: 2px solid var(--line);
+}
+.avatar-frame-preview.dragging {
+  cursor: grabbing;
+}
+.avatar-frame-preview img {
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+/* Modal dismiss area */
+.modal {
+  cursor: default;
+}

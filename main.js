@@ -400,12 +400,17 @@ function setupDisplayMedia() {
           callback({});
           return;
         }
+        // Sistem sesi: Windows loopback (renderer getDisplayMedia audio:true → audioRequested)
         const wantAudio = !!(request && request.audioRequested);
-        // audio: 'loopback' yalnızca Windows'ta sistem sesi için
         if (wantAudio) {
           callback({ video: source, audio: "loopback" });
         } else {
-          callback({ video: source });
+          // Yine de loopback dene — bazı Electron sürümlerinde flag gelmiyor
+          try {
+            callback({ video: source, audio: "loopback" });
+          } catch {
+            callback({ video: source });
+          }
         }
       } catch (err) {
         console.warn("displayMedia handler", err);
@@ -417,9 +422,11 @@ function setupDisplayMedia() {
   }
 }
 
-// Windows: görev çubuğu / atlama listesi kimliği (Electron varsayılanı yerine Hearth)
+// Windows: görev çubuğu kimliği — app ready ÖNCESİ set edilmeli
 if (process.platform === "win32") {
-  app.setAppUserModelId("com.hearth.app");
+  try {
+    app.setAppUserModelId("com.hearth.app");
+  } catch {}
 }
 
 app.whenReady().then(() => {
@@ -429,6 +436,11 @@ app.whenReady().then(() => {
     } catch {}
   }
   createWindow();
+  // Paketli exe'de de pencere ikonunu zorla
+  try {
+    const ip = appIconPath();
+    if (win && ip && typeof win.setIcon === "function") win.setIcon(ip);
+  } catch {}
   createTray();
   setupDisplayMedia();
   setupAutoUpdater();
