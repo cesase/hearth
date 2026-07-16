@@ -1,0 +1,6 @@
+{
+  "enabled": true,
+  "supabaseUrl": "https://PROJE_REF.supabase.co",
+  "supabaseAnonKey": "sb_publishable_...veya_eyJhbGciOi...",
+  "note": "URL SADECE https://PROJE.supabase.co — sonunda /rest/v1/ OLMASIN (Data API sayfasından kopyalama). Key: Settings → API Keys → Publishable veya Legacy anon. Secret/service_role KOYMA."
+}

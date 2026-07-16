@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="tr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; connect-src 'self' ws: wss: http: https: blob:; media-src 'self' blob: mediastream:; img-src 'self' data: blob: https:; style-src 'self' 'unsafe-inline'; script-src 'self'"
+    />
+    <title>Hearth</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <!-- İlk açılış rehberi -->
+    <div id="onboarding" class="onboarding" hidden>
+      <div class="onboarding-card">
+        <img class="logo-lg-img" src="assets/icon.png" alt="Hearth" />
+        <h1>Hearth’a hoş geldin</h1>
+        <div class="onboard-steps">
+          <div class="onboard-step"><strong>1. Arkadaş ekle</strong><p>Soldaki ＋ ile arkadaşının kullanıcı adını yaz.</p></div>
+          <div class="onboard-step"><strong>2. Sohbet et</strong><p>Listeden seç, mesaj yaz veya dosya sürükle.</p></div>
+          <div class="onboard-step"><strong>3. Ara</strong><p>Ara butonuyla sesli konuş; çevrimdışıysa cevapsız düşer.</p></div>
+          <div class="onboard-step"><strong>4. Grup</strong><p>Birden fazla arkadaş seçip ortak oda / çağrı oluştur.</p></div>
+          <div class="onboard-step"><strong>5. Ekran & dosya</strong><p>Görüşmede ekran paylaş; dosyalar doğrudan P2P gider.</p></div>
+        </div>
+        <button type="button" id="btn-onboard-done" class="btn primary block">Anladım, başla</button>
+      </div>
+    </div>
+
+    <!-- AUTH -->
+    <section id="view-auth" class="view auth-view" hidden>
+      <div class="auth-shell">
+        <div class="auth-hero">
+          <img class="logo-lg-img" src="assets/icon.png" alt="Hearth" />
+          <h1>Hearth</h1>
+          <p>Arkadaşlarınla sesli konuş, ekran paylaş, dosya gönder — doğrudan cihazlar arasında.</p>
+        </div>
+        <div class="auth-card">
+          <div class="tabs">
+            <button type="button" class="tab active" data-tab="login">Giriş</button>
+            <button type="button" class="tab" data-tab="register">Kayıt ol</button>
+          </div>
+
+          <p id="cloud-mode-badge" class="hint tiny" style="margin-bottom:10px">Yerel mod</p>
+          <form id="form-login" class="auth-form">
+            <label>E-posta<input id="login-email" type="email" required autocomplete="username" /></label>
+            <label>Şifre<input id="login-pass" type="password" required autocomplete="current-password" /></label>
+            <p id="login-error" class="form-error" hidden></p>
+            <button class="btn primary block" type="submit">Giriş yap</button>
+          </form>
+
+          <form id="form-register" class="auth-form" hidden>
+            <label>E-posta<input id="reg-email" type="email" required autocomplete="email" /></label>
+            <label>Kullanıcı adı (benzersiz)
+              <input id="reg-username" type="text" required minlength="3" maxlength="20" pattern="[A-Za-z0-9._]+" placeholder="ornek_kullanici" autocomplete="off" />
+            </label>
+            <label>Görünen ad<input id="reg-display" type="text" maxlength="32" placeholder="İsteğe bağlı" /></label>
+            <label>Şifre (min 6)<input id="reg-pass" type="password" required minlength="6" autocomplete="new-password" /></label>
+            <p class="hint">Sadece kendi bilgilerin. Arkadaş adını girmen gerekmez — sonra listeden eklersin.</p>
+            <p id="reg-error" class="form-error" hidden></p>
+            <button class="btn primary block" type="submit">Hesap oluştur</button>
+          </form>
+        </div>
+      </div>
+    </section>
+
+    <!-- APP -->
+    <section id="view-app" class="view app-view" hidden>
+      <!-- Sol: arkadaş listesi -->
+      <aside class="rail" id="app-rail">
+        <div class="rail-brand rail-brand-logo-only">
+          <img class="logo-sm-img" src="assets/icon.png" alt="Hearth" title="Hearth" />
+          <small id="net-status" class="net-status-pill">…</small>
+        </div>
+
+        <div class="status-row status-compact">
+          <select id="my-status-select" title="Durum">
+            <option value="online">🟢 Çevrimiçi</option>
+            <option value="idle">🌙 Boşta</option>
+            <option value="dnd">⛔ Rahatsız etme</option>
+            <option value="invisible">⚫ Görünmez</option>
+          </select>
+          <!-- özel durum yazısı seçenek içinde / altında -->
+          <input id="my-status-text" type="text" maxlength="80" placeholder="Durum yazısı (isteğe bağlı)" />
+        </div>
+
+        <div class="rail-section-title">
+          <span>Arkadaşlar</span>
+          <div class="rail-section-actions">
+            <button type="button" id="btn-group-from-selection" class="icon-btn" title="Seçilenlerle grup / ara" hidden>📞</button>
+            <button type="button" id="btn-add-friend" class="icon-btn" title="Arkadaş ekle">＋</button>
+          </div>
+        </div>
+        <div id="friend-list" class="friend-list"></div>
+
+        <div class="rail-me">
+          <button type="button" id="btn-my-avatar" class="avatar-btn" title="Profilim">
+            <img id="my-avatar-img" alt="" hidden />
+            <span id="my-avatar-fallback">?</span>
+            <span id="my-status-dot" class="status-dot online" title="Durum"></span>
+          </button>
+          <div class="me-meta">
+            <strong id="my-display">—</strong>
+            <small id="my-username">@—</small>
+          </div>
+          <button type="button" id="btn-open-settings" class="icon-btn" title="Ayarlar">⚙️</button>
+        </div>
+      </aside>
+
+      <!-- Orta: sohbet -->
+      <main class="stage" id="app-stage">
+        <header class="stage-header" id="stage-header">
+          <div class="stage-peer">
+            <div class="avatar md" id="peer-avatar">?</div>
+            <div class="stage-peer-text">
+              <h2 id="peer-title">Bir sohbet seç</h2>
+              <p id="peer-sub" class="muted">Soldan arkadaş veya sağdan grup seç</p>
+            </div>
+          </div>
+          <div class="stage-header-right">
+            <div class="chat-search-wrap" id="chat-search-wrap" hidden>
+              <input id="chat-search" type="search" placeholder="Bu sohbette ara…" maxlength="80" />
+              <span id="chat-search-count" class="chat-search-count"></span>
+            </div>
+            <div class="stage-actions" id="stage-actions" hidden>
+              <button type="button" id="btn-call" class="btn success" disabled title="Ara (çevrimdışıysa cevapsız düşer)">📞 Ara</button>
+              <button type="button" id="btn-hangup" class="btn danger" hidden>Kapat</button>
+            </div>
+          </div>
+        </header>
+
+        <div id="incoming-bar" class="incoming-bar" hidden>
+          <span id="incoming-text">Gelen arama…</span>
+          <div>
+            <button type="button" id="btn-accept" class="btn success sm">Aç</button>
+            <button type="button" id="btn-reject" class="btn danger sm">Reddet</button>
+          </div>
+        </div>
+
+        <div id="media-dock" class="media-dock" hidden>
+          <div class="media-toolbar">
+            <span id="call-timer" class="call-timer-pill">00:00</span>
+            <span id="call-members-label" class="call-members-label"></span>
+            <label class="media-size-label">Boyut
+              <input id="media-height" type="range" min="140" max="520" value="220" />
+            </label>
+            <select id="media-layout" class="layout-select" title="Görünüm">
+              <option value="both">Yan yana</option>
+              <option value="remote">Sadece paylaşılan</option>
+              <option value="local">Sadece senin önizlemen</option>
+            </select>
+            <button type="button" id="btn-fullscreen-media" class="btn soft sm" title="Tam ekran">⛶</button>
+          </div>
+          <div class="media-videos" id="media-videos">
+            <div class="vid remote" id="vid-remote-box">
+              <video id="remote-video" autoplay playsinline></video>
+              <div id="remote-ph" class="vid-ph">Ekran yok</div>
+              <span class="vid-tag" id="remote-tag">Arkadaş</span>
+            </div>
+            <div class="vid local" id="vid-local-box">
+              <video id="local-video" autoplay playsinline muted></video>
+              <div id="local-ph" class="vid-ph sm">Sen</div>
+            </div>
+          </div>
+          <!-- Çağrı kontrolleri: yalnızca görüşmede burada -->
+          <div class="in-call-controls" id="in-call-controls">
+            <div class="ctrl-icons call-icons">
+              <button type="button" id="btn-mic" class="icon-ctrl active-mic" title="Mikrofon">🎤</button>
+              <button type="button" id="btn-deafen" class="icon-ctrl" title="Deafen">🔇</button>
+              <button type="button" id="btn-noise" class="icon-ctrl active-mic" title="Gürültü engelleme">🧹</button>
+              <button type="button" id="btn-screen" class="icon-ctrl" title="Ekran paylaş" disabled>🖥️</button>
+            </div>
+            <div class="call-sliders">
+              <label class="slider-label" title="Mikrofon"><span>🎤</span> <span id="mic-vol-val">100%</span>
+                <input id="mic-vol" type="range" min="0" max="200" value="100" />
+              </label>
+              <label class="slider-label" title="Çağrı sesi"><span>📞</span> <span id="out-vol-val">100%</span>
+                <input id="out-vol" type="range" min="0" max="200" value="100" />
+              </label>
+              <label class="slider-label" title="Ekran sesi"><span>🔊</span> <span id="screen-audio-vol-val">100%</span>
+                <input id="screen-audio-vol" type="range" min="0" max="200" value="100" />
+              </label>
+            </div>
+            <div class="call-screen-opts">
+              <select id="screen-quality" title="Kalite">
+                <option value="720p">720p</option>
+                <option value="1080p" selected>1080p</option>
+                <option value="lossless">Yüksek</option>
+              </select>
+              <select id="screen-fps" title="FPS">
+                <option value="30" selected>30 FPS</option>
+                <option value="60">60 FPS</option>
+              </select>
+              <label class="check-row" title="İmleç"><input id="screen-cursor" type="checkbox" /> 🖱️</label>
+              <label class="check-row" title="Sistem sesi"><input id="screen-system-audio" type="checkbox" checked /> 🔉</label>
+            </div>
+          </div>
+        </div>
+
+        <div id="transfer-bar" class="transfer-bar" hidden>
+          <div class="transfer-meta">
+            <span id="transfer-label">Dosya aktarımı</span>
+            <span id="transfer-pct">0%</span>
+          </div>
+          <div class="transfer-track"><div id="transfer-fill" class="transfer-fill"></div></div>
+          <div class="transfer-actions">
+            <small id="transfer-detail" class="muted"></small>
+            <button type="button" id="btn-cancel-transfer" class="btn danger sm">İptal</button>
+          </div>
+        </div>
+
+        <div id="pins-bar" class="pins-bar" hidden>
+          <strong>📌 Sabitlenenler</strong>
+          <div id="pins-list" class="pins-list"></div>
+        </div>
+
+        <!-- Chat: flex + min-height:0 — pencereye oturur -->
+        <div class="chat-shell" id="chat-shell">
+          <div id="chat-empty" class="empty-state" hidden>
+            <div class="empty-icon">💬</div>
+            <p>Henüz mesaj yok</p>
+            <small>İlk mesajı yaz veya dosyayı buraya sürükle</small>
+          </div>
+          <div id="chat-log" class="chat-log"></div>
+
+          <div id="composer-panels" class="composer-panels">
+            <div id="emoji-panel" class="pop-panel" hidden></div>
+            <div id="gif-panel" class="pop-panel gif-panel" hidden>
+              <input id="gif-search" type="text" placeholder="GIF ara (Google/Tenor)…" />
+              <div id="gif-results" class="gif-results"></div>
+              <p class="hint tiny">Google’ın GIF servisi (Tenor) ile uygulama içi arama — tarayıcı açılmaz.</p>
+            </div>
+          </div>
+
+          <form id="chat-form" class="composer">
+            <div class="composer-tools">
+              <button type="button" id="btn-emoji" class="icon-btn" title="Emoji">😀</button>
+              <button type="button" id="btn-gif" class="icon-btn" title="GIF">GIF</button>
+              <button type="button" id="btn-file" class="icon-btn" title="Dosya gönder" disabled>📎</button>
+            </div>
+            <input id="chat-input" type="text" placeholder="Mesaj yaz…" maxlength="2000" autocomplete="off" disabled />
+            <button type="submit" class="btn primary sm" id="btn-send" disabled>Gönder</button>
+          </form>
+        </div>
+      </main>
+
+      <!-- Sağ: grup odaları (çağrı kontrolleri görüşme panelinde) -->
+      <aside class="groups-pane" id="app-controls">
+        <div class="groups-pane-header">
+          <h3>Grup odaları</h3>
+          <button type="button" id="btn-new-group" class="icon-btn" title="Seçili arkadaşlardan oda oluştur">＋</button>
+        </div>
+        <div id="group-list" class="group-list"></div>
+        <div id="group-empty" class="empty-state small">
+          <p>Henüz grup yok</p>
+          <small>Çoklu seçim + ＋ ile oluştur</small>
+        </div>
+      </aside>
+    </section>
+
+    <!-- Mesaj bağlam menüsü (sağ tık) -->
+    <div id="msg-context-menu" class="ctx-menu" hidden>
+      <button type="button" data-act="reply">↩ Yanıtla</button>
+      <button type="button" data-act="react-thumb">👍 Tepki</button>
+      <button type="button" data-act="react-heart">❤️ Tepki</button>
+      <button type="button" data-act="pin">📌 Sabitle / kaldır</button>
+      <button type="button" data-act="edit">✏️ Düzenle</button>
+      <button type="button" data-act="delete">🗑️ Sil</button>
+    </div>
+
+    <!-- MODALS -->
+    <div id="modal-add-friend" class="modal" hidden>
+      <div class="modal-card">
+        <h2>Arkadaş ekle</h2>
+        <p class="hint">Arkadaşının <strong>kullanıcı adını</strong> yaz (kayıt olurken seçtiği @isim).</p>
+        <label>Kullanıcı adı
+          <input id="add-friend-user" type="text" placeholder="ornek_kullanici" maxlength="20" />
+        </label>
+        <p id="add-friend-error" class="form-error" hidden></p>
+        <div class="modal-actions">
+          <button type="button" class="btn soft" data-close="modal-add-friend">İptal</button>
+          <button type="button" id="btn-add-friend-go" class="btn primary">Ekle</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="modal-settings" class="modal" hidden>
+      <div class="modal-card settings-shell">
+        <h2>Ayarlar</h2>
+        <div class="settings-layout">
+          <nav class="settings-nav" id="settings-nav">
+            <button type="button" class="settings-nav-btn active" data-settings-tab="sound">🔊 Ses</button>
+            <button type="button" class="settings-nav-btn" data-settings-tab="keys">⌨️ Tuş</button>
+            <button type="button" class="settings-nav-btn" data-settings-tab="security">🔒 Güvenlik</button>
+          </nav>
+          <div class="settings-panels">
+            <div class="settings-panel active" id="settings-tab-sound" data-settings-panel="sound">
+              <h3>Ses</h3>
+              <p class="hint">Arama, aranma ve bildirim sesleri. Önizle ile dinle.</p>
+              <div class="sound-settings-grid">
+                <label class="sound-row">
+                  <span>Gelen arama (aranan)</span>
+                  <div class="sound-pick">
+                    <select id="set-sound-incoming"></select>
+                    <button type="button" class="btn soft sm" id="btn-preview-incoming" title="Önizle">▶</button>
+                  </div>
+                </label>
+                <label class="sound-row">
+                  <span>Giden arama (arayan)</span>
+                  <div class="sound-pick">
+                    <select id="set-sound-outgoing"></select>
+                    <button type="button" class="btn soft sm" id="btn-preview-outgoing" title="Önizle">▶</button>
+                  </div>
+                </label>
+                <label class="sound-row">
+                  <span>Mesaj bildirimi</span>
+                  <div class="sound-pick">
+                    <select id="set-sound-notify"></select>
+                    <button type="button" class="btn soft sm" id="btn-preview-notify" title="Önizle">▶</button>
+                  </div>
+                </label>
+              </div>
+              <div class="sound-toggles">
+                <label class="check-row">
+                  <input type="checkbox" id="set-sound-ring-enabled" checked />
+                  Arama zil sesleri
+                </label>
+                <label class="check-row">
+                  <input type="checkbox" id="set-sound-notify-enabled" checked />
+                  Mesaj bildirim sesi
+                </label>
+              </div>
+              <label class="slider-label">Zil & bildirim seviyesi <span id="set-sound-vol-val">100%</span></label>
+              <input id="set-sound-vol" type="range" min="0" max="100" value="100" />
+              <label class="slider-label">Varsayılan mikrofon seviyesi <span id="set-mic-vol-val">100%</span></label>
+              <input id="set-mic-vol" type="range" min="0" max="200" value="100" />
+            </div>
+
+            <div class="settings-panel" id="settings-tab-keys" data-settings-panel="keys" hidden>
+              <h3>Tuş kısayolları</h3>
+              <p class="hint">Kendi kombinasyonunu kaydet. Logitech G Hub makrosu da aynı tuşları gönderebilir.</p>
+              <label>Mikrofon aç/kapa
+                <div class="hotkey-row">
+                  <input id="set-hotkey" type="text" readonly placeholder="Tıkla ve tuşa bas…" />
+                  <button type="button" id="btn-clear-hotkey" class="btn soft sm">Temizle</button>
+                </div>
+              </label>
+              <label>Deafen
+                <div class="hotkey-row">
+                  <input id="set-deafen-hotkey" type="text" readonly placeholder="Tıkla ve tuşa bas…" />
+                  <button type="button" id="btn-clear-deafen" class="btn soft sm">Temizle</button>
+                </div>
+              </label>
+            </div>
+
+            <div class="settings-panel" id="settings-tab-security" data-settings-panel="security" hidden>
+              <h3>Güvenlik & hesap</h3>
+              <p class="hint">Bulut modunda hesap Supabase’de; yerel modda bu cihazda saklanır.</p>
+              <label>Kullanıcı adı<input id="set-username" type="text" disabled /></label>
+              <label>E-posta<input id="set-email" type="text" disabled /></label>
+              <label class="check-row">
+                <input type="checkbox" id="set-desktop-notify" checked />
+                Masaüstü bildirimleri
+              </label>
+              <h3 style="margin-top:1.25rem">Uygulama</h3>
+              <p class="hint" id="app-version-label">Sürüm: …</p>
+              <p class="hint tiny" id="update-status-label"></p>
+              <button type="button" id="btn-check-updates" class="btn soft">Güncellemeleri kontrol et</button>
+              <p class="hint">Oturumu kapatırsan bu cihazdaki oturum sona erer; sohbet geçmişi silinmez.</p>
+              <button type="button" id="btn-logout" class="btn danger">Çıkış yap</button>
+            </div>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <div style="flex:1"></div>
+          <button type="button" class="btn soft" data-close="modal-settings">Kapat</button>
+          <button type="button" id="btn-settings-save" class="btn primary">Kaydet</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="modal-screen" class="modal" hidden>
+      <div class="modal-card wide">
+        <h2>Ne paylaşılacak?</h2>
+        <p class="hint">Oyun için mümkünse <strong>tüm ekran</strong> yerine oyun penceresini seç; daha akıcı olur.</p>
+        <div id="screen-list" class="screen-list"></div>
+        <div class="modal-actions">
+          <button type="button" class="btn soft" data-close="modal-screen">İptal</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="modal-avatar" class="modal" hidden>
+      <div class="modal-card">
+        <h2>Profil fotoğrafı</h2>
+        <p class="hint">Fare ile sürükle; yalnızca ölçek kaydırıcısı var.</p>
+        <div class="avatar-editor avatar-editor-simple">
+          <div class="avatar-frame-preview" id="avatar-frame-preview">
+            <img id="avatar-edit-img" alt="profil" draggable="false" />
+          </div>
+          <div class="avatar-edit-controls">
+            <label class="slider-label">Ölçek <span id="av-s-val">100%</span></label>
+            <input id="av-s" type="range" min="100" max="300" value="100" />
+            <!-- x/y gizli tutulur; sürükleme ile set edilir -->
+            <input id="av-x" type="hidden" value="50" />
+            <input id="av-y" type="hidden" value="50" />
+            <span id="av-x-val" hidden>50%</span>
+            <span id="av-y-val" hidden>50%</span>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn soft" data-close="modal-avatar">İptal</button>
+          <button type="button" id="btn-avatar-save" class="btn primary">Kaydet</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Profil (kendi: düzenlenebilir / diğer: salt okunur) -->
+    <div id="modal-profile" class="modal" hidden>
+      <div class="modal-card profile-card">
+        <div class="profile-hero">
+          <button type="button" class="avatar xl profile-avatar-btn" id="profile-avatar" title="Fotoğraf">?</button>
+          <div class="profile-hero-text">
+            <h2 id="profile-display">—</h2>
+            <p class="muted" id="profile-username">@—</p>
+            <p id="profile-status-line" class="profile-status">🟢 Çevrimiçi</p>
+          </div>
+        </div>
+
+        <!-- Salt okunur (başkası) -->
+        <div id="profile-view-readonly">
+          <div class="profile-section">
+            <h3>Hakkında</h3>
+            <p id="profile-about" class="profile-about">—</p>
+          </div>
+          <div class="profile-section">
+            <h3>Sosyal</h3>
+            <ul id="profile-socials" class="profile-socials"></ul>
+          </div>
+        </div>
+
+        <!-- Düzenleme (kendin) -->
+        <div id="profile-view-edit" hidden>
+          <label>Görünen ad<input id="profile-edit-display" type="text" maxlength="32" /></label>
+          <label>Hakkımda<textarea id="profile-edit-about" rows="3" maxlength="500" placeholder="Kısa bio…"></textarea></label>
+          <label>Twitter / X<input id="profile-edit-twitter" type="text" placeholder="https://…" /></label>
+          <label>YouTube<input id="profile-edit-youtube" type="text" placeholder="https://…" /></label>
+          <label>Instagram<input id="profile-edit-instagram" type="text" placeholder="https://…" /></label>
+          <label>Website<input id="profile-edit-web" type="text" placeholder="https://…" /></label>
+          <div class="profile-edit-actions">
+            <button type="button" id="btn-change-avatar" class="btn soft">Fotoğraf seç</button>
+            <button type="button" id="btn-frame-avatar" class="btn soft">Konumlandır</button>
+          </div>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="btn soft" data-close="modal-profile">Kapat</button>
+          <button type="button" id="btn-profile-save" class="btn primary" hidden>Kaydet</button>
+          <button type="button" id="btn-profile-edit" class="btn primary" hidden style="display:none">Düzenle</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Medya indirme onayı -->
+    <div id="modal-media-offer" class="modal" hidden>
+      <div class="modal-card">
+        <h2 id="media-offer-title">Medya geliyor</h2>
+        <p id="media-offer-detail" class="hint"></p>
+        <div class="modal-actions">
+          <button type="button" id="btn-media-reject" class="btn soft">Reddet</button>
+          <button type="button" id="btn-media-accept" class="btn primary">İndir ve göster</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tam ekran medya -->
+    <div id="fs-media" class="fs-media" hidden>
+      <div class="fs-toolbar">
+        <select id="fs-layout">
+          <option value="both">Yan yana eşit</option>
+          <option value="remote">Sadece paylaşılan</option>
+          <option value="local">Sadece paylaşan (sen)</option>
+        </select>
+        <button type="button" id="btn-fs-exit" class="btn soft sm">Tam ekrandan çık (Esc)</button>
+      </div>
+      <div class="fs-videos" id="fs-videos">
+        <div class="fs-vid" id="fs-remote-wrap"><video id="fs-remote-video" autoplay playsinline></video></div>
+        <div class="fs-vid" id="fs-local-wrap"><video id="fs-local-video" autoplay playsinline muted></video></div>
+      </div>
+    </div>
+
+    <!-- Çağrı sesi ile sistem sesi ayrı — yankı/çakışma azaltılır -->
+    <audio id="remote-audio" autoplay></audio>
+    <audio id="remote-screen-audio" autoplay></audio>
+    <script src="vendor/supabase.js"></script>
+    <script src="cloud/hearth-cloud.js"></script>
+    <script src="vendor/peerjs.min.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>

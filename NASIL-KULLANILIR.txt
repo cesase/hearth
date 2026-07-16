@@ -1,0 +1,53 @@
+========================================
+  HEARTH — KULLANIM
+========================================
+
+AÇMA (geliştirici klasörü)
+  BASLAT.bat  veya  BASLAT.vbs
+  (npm start)
+
+KURULU SÜRÜM (arkadaşlar)
+  Siteden Hearth-Setup.exe indir → kur → masaüstü Hearth ikonu
+  Detay: DAGITIM.md
+
+----------------------------------------
+KAYIT / GİRİŞ
+----------------------------------------
+• Bulut modu açıksa (cloud/config.json dolu):
+  e-posta + kullanıcı adı + şifre → Supabase hesabı
+
+• Config yoksa:
+  aynı form yerel hesaba yazar (sadece bu bilgisayar)
+
+Bulut kurulumu: CLOUD.md
+
+----------------------------------------
+ARKADAŞ EKLEME
+----------------------------------------
+1) Sol üst ＋ butonu
+2) Arkadaşının kullanıcı adını yaz
+3) İkisi de programı açınca çevrimiçi görünür
+4) Sohbete tıkla → ara / mesaj / dosya / ekran
+
+----------------------------------------
+ÖZELLİKLER
+----------------------------------------
+• Kalıcı sohbet geçmişi (yerel)
+• Profil resmi
+• Dosya gönderimi P2P
+• Ekran paylaşımı
+• Mikrofon / sağırlaştır + kısayollar
+• Emoji + GIF
+• Sesler (Ayarlar)
+
+----------------------------------------
+KAPATMA
+----------------------------------------
+X → tepsiye iner (saatin yanı)
+Tam kapat: tepsi → Çıkış veya Ayarlar → Çıkış yap
+
+----------------------------------------
+ARKADAŞA GÖNDERMEK
+----------------------------------------
+npm run pack  →  dist içindeki Hearth-Portable.exe
+(veya npm run setup ile kurulum dosyası)

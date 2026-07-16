@@ -1,0 +1,12 @@
+node_modules/
+dist/
+cloud/config.json
+*.log
+.DS_Store
+Thumbs.db
+*.exe
+!assets/**
+.env
+.env.*
+GH_TOKEN
+*.local

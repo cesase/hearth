@@ -1,0 +1,3626 @@
+(() => {
+  const api = window.api;
+  if (!api) {
+    document.body.innerHTML =
+      "<p style='color:#fff;padding:24px'>Bu uygulama masaüstünden açılmalı (IkiliSohbet.exe veya BASLAT.vbs).</p>";
+    return;
+  }
+
+  const ICE = {
+    iceServers: [
+      { urls: "stun:stun.l.google.com:19302" },
+      { urls: "stun:stun1.l.google.com:19302" },
+      {
+        urls: "turn:openrelay.metered.ca:80",
+        username: "openrelayproject",
+        credential: "openrelayproject",
+      },
+      {
+        urls: "turn:openrelay.metered.ca:443",
+        username: "openrelayproject",
+        credential: "openrelayproject",
+      },
+      {
+        urls: "turn:openrelay.metered.ca:443?transport=tcp",
+        username: "openrelayproject",
+        credential: "openrelayproject",
+      },
+    ],
+  };
+
+  // Google'ın GIF platformu Tenor (tarayıcı açılmaz, uygulama içi).
+  // Ücretsiz key: https://developers.google.com/tenor — yoksa Giphy yedek
+  const TENOR_KEY = "AIzaSyAyimkuYQYF_FXVALexPuGQctUWRURdCYQ"; // yaygın demo; kendi key'in daha iyi
+  const GIPHY_KEY = "dc6zaTOxFJmzC";
+
+  const EMOJIS = [
+    "😀","😂","🤣","😊","😍","😘","😎","🤔","😅","😢","😭","😡","👍","👎","👏","🙏",
+    "🔥","✨","🎉","💯","❤️","💔","👀","🤝","💪","🫡","😴","🤗","😏","🙌","✅","❌",
+    "⭐","🌟","🍕","☕","🎮","🎧","📸","🚀","🌈","🍀","🐶","🐱","👻","💀","🤖","👑",
+  ];
+
+  const $ = (id) => document.getElementById(id);
+
+  /** Responsive shell: wide | normal | compact */
+  function updateShellLayout() {
+    const w = window.innerWidth || document.documentElement.clientWidth || 1200;
+    let layout = "wide";
+    if (w < 800) layout = "compact";
+    else if (w < 1100) layout = "normal";
+    if (document.body.dataset.layout !== layout) {
+      document.body.dataset.layout = layout;
+    }
+  }
+  updateShellLayout();
+  window.addEventListener("resize", updateShellLayout);
+  if (typeof ResizeObserver !== "undefined") {
+    try {
+      new ResizeObserver(() => updateShellLayout()).observe(document.documentElement);
+    } catch {}
+  }
+
+  const el = {
+    viewAuth: $("view-auth"),
+    viewApp: $("view-app"),
+    chatEmpty: $("chat-empty"),
+    formLogin: $("form-login"),
+    formRegister: $("form-register"),
+    loginEmail: $("login-email"),
+    loginPass: $("login-pass"),
+    loginError: $("login-error"),
+    regEmail: $("reg-email"),
+    regUsername: $("reg-username"),
+    regDisplay: $("reg-display"),
+    regPass: $("reg-pass"),
+    regError: $("reg-error"),
+    netStatus: $("net-status"),
+    friendList: $("friend-list"),
+    btnAddFriend: $("btn-add-friend"),
+    myAvatarImg: $("my-avatar-img"),
+    myAvatarFb: $("my-avatar-fallback"),
+    btnMyAvatar: $("btn-my-avatar"),
+    myDisplay: $("my-display"),
+    myUsername: $("my-username"),
+    btnOpenSettings: $("btn-open-settings"),
+    peerAvatar: $("peer-avatar"),
+    peerTitle: $("peer-title"),
+    peerSub: $("peer-sub"),
+    stageActions: $("stage-actions"),
+    btnCall: $("btn-call"),
+    btnHangup: $("btn-hangup"),
+    incomingBar: $("incoming-bar"),
+    incomingText: $("incoming-text"),
+    btnAccept: $("btn-accept"),
+    btnReject: $("btn-reject"),
+    mediaDock: $("media-dock"),
+    remoteVideo: $("remote-video"),
+    localVideo: $("local-video"),
+    remotePh: $("remote-ph"),
+    localPh: $("local-ph"),
+    remoteTag: $("remote-tag"),
+    callTimer: $("call-timer"),
+    chatLog: $("chat-log"),
+    chatForm: $("chat-form"),
+    chatInput: $("chat-input"),
+    btnSend: $("btn-send"),
+    btnEmoji: $("btn-emoji"),
+    btnGif: $("btn-gif"),
+    btnFile: $("btn-file"),
+    emojiPanel: $("emoji-panel"),
+    gifPanel: $("gif-panel"),
+    gifSearch: $("gif-search"),
+    gifResults: $("gif-results"),
+    btnMic: $("btn-mic"),
+    btnDeafen: $("btn-deafen"),
+    btnNoise: $("btn-noise"),
+    micVol: $("mic-vol"),
+    micVolVal: $("mic-vol-val"),
+    outVol: $("out-vol"),
+    outVolVal: $("out-vol-val"),
+    screenAudioVol: $("screen-audio-vol"),
+    screenAudioVolVal: $("screen-audio-vol-val"),
+    screenQuality: $("screen-quality"),
+    screenFps: $("screen-fps"),
+    screenCursor: $("screen-cursor"),
+    screenSystemAudio: $("screen-system-audio"),
+    btnScreen: $("btn-screen"),
+    mediaHeight: $("media-height"),
+    mediaLayout: $("media-layout"),
+    mediaVideos: $("media-videos"),
+    btnFullscreenMedia: $("btn-fullscreen-media"),
+    btnGroupFromSelection: $("btn-group-from-selection"),
+    btnNewGroup: $("btn-new-group"),
+    groupList: $("group-list"),
+    groupEmpty: $("group-empty"),
+    chatSearch: $("chat-search"),
+    chatSearchWrap: $("chat-search-wrap"),
+    chatSearchCount: $("chat-search-count"),
+    callMembersLabel: $("call-members-label"),
+    inCallControls: $("in-call-controls"),
+    msgContextMenu: $("msg-context-menu"),
+    onboarding: $("onboarding"),
+    btnOnboardDone: $("btn-onboard-done"),
+    myStatusDot: $("my-status-dot"),
+    modalProfile: $("modal-profile"),
+    profileAvatar: $("profile-avatar"),
+    profileDisplay: $("profile-display"),
+    profileUsername: $("profile-username"),
+    profileStatusLine: $("profile-status-line"),
+    profileAbout: $("profile-about"),
+    profileSocials: $("profile-socials"),
+    btnProfileEdit: $("btn-profile-edit"),
+    modalMediaOffer: $("modal-media-offer"),
+    mediaOfferTitle: $("media-offer-title"),
+    mediaOfferDetail: $("media-offer-detail"),
+    btnMediaAccept: $("btn-media-accept"),
+    btnMediaReject: $("btn-media-reject"),
+    transferBar: $("transfer-bar"),
+    transferLabel: $("transfer-label"),
+    transferPct: $("transfer-pct"),
+    transferFill: $("transfer-fill"),
+    transferDetail: $("transfer-detail"),
+    btnCancelTransfer: $("btn-cancel-transfer"),
+    pinsBar: $("pins-bar"),
+    pinsList: $("pins-list"),
+    chatShell: $("chat-shell"),
+    stage: document.querySelector(".stage"),
+    myStatusSelect: $("my-status-select"),
+    myStatusText: $("my-status-text"),
+    setAbout: $("set-about"),
+    setSocialTwitter: $("set-social-twitter"),
+    setSocialYoutube: $("set-social-youtube"),
+    setSocialInstagram: $("set-social-instagram"),
+    setSocialWeb: $("set-social-web"),
+    fsMedia: $("fs-media"),
+    fsLayout: $("fs-layout"),
+    fsVideos: $("fs-videos"),
+    fsRemote: $("fs-remote-video"),
+    fsLocal: $("fs-local-video"),
+    btnFsExit: $("btn-fs-exit"),
+    remoteScreenAudio: $("remote-screen-audio"),
+    modalAdd: $("modal-add-friend"),
+    addFriendUser: $("add-friend-user"),
+    addFriendError: $("add-friend-error"),
+    btnAddFriendGo: $("btn-add-friend-go"),
+    modalSettings: $("modal-settings"),
+    setDisplay: $("set-display"),
+    setUsername: $("set-username"),
+    setEmail: $("set-email"),
+    setHotkey: $("set-hotkey"),
+    btnClearHotkey: $("btn-clear-hotkey"),
+    setDeafenHotkey: $("set-deafen-hotkey"),
+    btnClearDeafen: $("btn-clear-deafen"),
+    setMicVol: $("set-mic-vol"),
+    setMicVolVal: $("set-mic-vol-val"),
+    setSoundIncoming: $("set-sound-incoming"),
+    setSoundOutgoing: $("set-sound-outgoing"),
+    setSoundNotify: $("set-sound-notify"),
+    setSoundRingEnabled: $("set-sound-ring-enabled"),
+    setSoundNotifyEnabled: $("set-sound-notify-enabled"),
+    setSoundVol: $("set-sound-vol"),
+    setSoundVolVal: $("set-sound-vol-val"),
+    btnPreviewIncoming: $("btn-preview-incoming"),
+    btnPreviewOutgoing: $("btn-preview-outgoing"),
+    btnPreviewNotify: $("btn-preview-notify"),
+    btnChangeAvatar: $("btn-change-avatar"),
+    btnFrameAvatar: $("btn-frame-avatar"),
+    btnSettingsSave: $("btn-settings-save"),
+    btnLogout: $("btn-logout"),
+    btnCheckUpdates: $("btn-check-updates"),
+    appVersionLabel: $("app-version-label"),
+    updateStatusLabel: $("update-status-label"),
+    modalScreen: $("modal-screen"),
+    screenList: $("screen-list"),
+    modalAvatar: $("modal-avatar"),
+    avatarEditImg: $("avatar-edit-img"),
+    avatarFramePreview: $("avatar-frame-preview"),
+    avX: $("av-x"),
+    avY: $("av-y"),
+    avS: $("av-s"),
+    avXVal: $("av-x-val"),
+    avYVal: $("av-y-val"),
+    avSVal: $("av-s-val"),
+    btnAvatarSave: $("btn-avatar-save"),
+    remoteAudio: $("remote-audio"),
+  };
+
+  /** @type {any} */
+  let me = null;
+  /** @type {any} */
+  let settings = {};
+  /** @type {any[]} */
+  let friends = [];
+  /** @type {string | null} */
+  let activeFriend = null;
+  /** @type {string | null} group id when viewing group chat */
+  let activeGroupId = null;
+  /** @type {any[]} */
+  let groups = [];
+  /** @type {Set<string>} multi-select for group create */
+  const selectedFriends = new Set();
+  let friendsOnlineCollapsed = false;
+  let friendsOfflineCollapsed = false;
+
+  /** @type {any} */
+  let peer = null;
+  /** @type {Map<string, any>} username -> dataConn */
+  const conns = new Map();
+  /** @type {Map<string, string>} username -> online|offline|busy */
+  const presence = new Map();
+  /** @type {Map<string, string|null>} username -> avatar data url from peer */
+  const remoteAvatars = new Map();
+
+  /** @type {any} */
+  let mediaCall = null;
+  /** @type {Map<string, any>} multi-party calls username -> MediaConnection */
+  const mediaCalls = new Map();
+  let callRingTimer = null;
+  let ctxTargetMessage = null;
+  /** @type {any} */
+  let screenCall = null;
+  /** @type {any} */
+  let incomingCall = null;
+  /** @type {string | null} */
+  let callWith = null;
+
+  /** @type {MediaStream | null} */
+  let rawMicStream = null;
+  /** @type {MediaStream | null} */
+  let processedMicStream = null;
+  /** @type {AudioContext | null} */
+  let audioCtx = null;
+  /** @type {GainNode | null} */
+  let micGain = null;
+  /** @type {MediaStream | null} */
+  let screenStream = null;
+
+  let micOn = true;
+  let deafened = false;
+  let inCall = false;
+  let presenceTimer = null;
+  let callTimerIv = null;
+  let callStartedAt = 0;
+  let capturingHotkey = false;
+  let capturingWhich = "mic"; // mic | deafen
+  let chatExpanded = false;
+  let preDeafenOutput = 100;
+
+  // incoming file state
+  let recvFile = null;
+  let sendFileBusy = false;
+  let activeTransferId = null;
+  let transferCancelled = false;
+  let noiseOn = true;
+  let replyTo = null;
+  /** @type {Map<string, number>} */
+  const unread = new Map();
+  /** @type {Map<string, any>} */
+  const profileCache = new Map();
+
+  const SOUND_OPTIONS = [
+    { file: "ring_incoming.mp3", label: "iPhone zil (gelen)" },
+    { file: "ring_outgoing.mp3", label: "Beep (giden)" },
+    { file: "notify.mp3", label: "Bildirim" },
+    { file: "fart_1.mp3", label: "Eğlence 1" },
+    { file: "fart_2.mp3", label: "Eğlence 2" },
+    { file: "fart_3.mp3", label: "Eğlence 3" },
+  ];
+
+  const snd = {
+    incoming: null,
+    outgoing: null,
+    notify: null,
+    preview: null,
+  };
+
+  function soundPath(file) {
+    // Silinen kopya ses adlarını güncel dosyalara yönlendir
+    const aliases = {
+      "IPhone_ringtone.mp3": "ring_incoming.mp3",
+      "notificaion.mp3": "notify.mp3",
+      "beep.mp3": "ring_outgoing.mp3",
+    };
+    let f = file || "notify.mp3";
+    f = String(f).replace(/^sounds\//, "");
+    if (aliases[f]) f = aliases[f];
+    return "sounds/" + f;
+  }
+
+  function soundMasterVol() {
+    const v = Number(settings.soundMasterVolume ?? 100);
+    return Math.max(0, Math.min(1, v / 100));
+  }
+
+  function rebuildSounds() {
+    stopRings();
+    try {
+      if (snd.preview) {
+        snd.preview.pause();
+        snd.preview = null;
+      }
+    } catch {}
+    const inc = settings.soundIncoming || "fart_3.mp3";
+    const out = settings.soundOutgoing || "ring_outgoing.mp3";
+    const ntf = settings.soundNotify || "notify.mp3";
+    snd.incoming = new Audio(soundPath(inc));
+    snd.incoming.loop = true;
+    snd.incoming.volume = soundMasterVol();
+    snd.outgoing = new Audio(soundPath(out));
+    snd.outgoing.loop = true;
+    snd.outgoing.volume = soundMasterVol();
+    snd.notify = new Audio(soundPath(ntf));
+    snd.notify.loop = false;
+    snd.notify.volume = soundMasterVol();
+  }
+
+  function ensureSounds() {
+    if (!snd.incoming || !snd.outgoing || !snd.notify) rebuildSounds();
+    const vol = soundMasterVol();
+    if (snd.incoming) snd.incoming.volume = vol;
+    if (snd.outgoing) snd.outgoing.volume = vol;
+    if (snd.notify) snd.notify.volume = vol;
+  }
+
+  function stopRings() {
+    try {
+      if (snd.incoming) {
+        snd.incoming.pause();
+        snd.incoming.currentTime = 0;
+      }
+      if (snd.outgoing) {
+        snd.outgoing.pause();
+        snd.outgoing.currentTime = 0;
+      }
+    } catch {}
+  }
+
+  function playIncomingRing() {
+    if (settings.soundRingEnabled === false) return;
+    ensureSounds();
+    stopRings();
+    snd.incoming.play().catch(() => {});
+  }
+
+  function playOutgoingRing() {
+    if (settings.soundRingEnabled === false) return;
+    ensureSounds();
+    stopRings();
+    snd.outgoing.play().catch(() => {});
+  }
+
+  async function playNotifyIfAllowed() {
+    try {
+      if (settings.soundNotifyEnabled === false) return;
+      if (settings.desktopNotify === false) return;
+      if (me && me.status && me.status !== "online") return;
+      const focused = await api.isWindowFocused();
+      if (focused) return;
+      ensureSounds();
+      snd.notify.currentTime = 0;
+      await snd.notify.play();
+    } catch {}
+  }
+
+  function fillSoundSelect(selectEl, selected) {
+    if (!selectEl) return;
+    selectEl.innerHTML = "";
+    for (const opt of SOUND_OPTIONS) {
+      const o = document.createElement("option");
+      o.value = opt.file;
+      o.textContent = opt.label;
+      if (opt.file === selected) o.selected = true;
+      selectEl.appendChild(o);
+    }
+    // seçili dosya listede yoksa yine de ekle
+    if (selected && ![...selectEl.options].some((x) => x.value === selected)) {
+      const o = document.createElement("option");
+      o.value = selected;
+      o.textContent = selected;
+      o.selected = true;
+      selectEl.appendChild(o);
+    }
+  }
+
+  function previewSound(file, loop) {
+    try {
+      if (snd.preview) {
+        snd.preview.pause();
+        snd.preview = null;
+      }
+      stopRings();
+      snd.preview = new Audio(soundPath(file));
+      snd.preview.loop = !!loop;
+      snd.preview.volume = soundMasterVol();
+      snd.preview.play().catch(() => {});
+      // 3 sn sonra otomatik dur (loop olsa bile önizleme)
+      setTimeout(() => {
+        try {
+          if (snd.preview) {
+            snd.preview.pause();
+            snd.preview = null;
+          }
+        } catch {}
+      }, loop ? 3500 : 4000);
+    } catch {}
+  }
+
+  function isMediaFileName(name) {
+    return /\.(png|jpe?g|gif|webp|bmp|mp4|webm|mov)$/i.test(name || "");
+  }
+
+  function mediaKind(name) {
+    if (/\.(mp4|webm|mov)$/i.test(name || "")) return "video";
+    if (/\.(png|jpe?g|gif|webp|bmp)$/i.test(name || "")) return "image";
+    return "file";
+  }
+
+  let mediaOfferResolve = null;
+  function askMediaOffer(meta) {
+    return new Promise((resolve) => {
+      mediaOfferResolve = resolve;
+      if (el.mediaOfferTitle) el.mediaOfferTitle.textContent = meta.kind === "video" ? "Video geliyor" : "Fotoğraf geliyor";
+      if (el.mediaOfferDetail)
+        el.mediaOfferDetail.textContent = `${meta.from || "Arkadaş"}: ${meta.name} (${fmtSize(meta.size || 0)}) — indirilsin mi?`;
+      if (el.modalMediaOffer) el.modalMediaOffer.hidden = false;
+    });
+  }
+  function closeMediaOffer(ok) {
+    if (el.modalMediaOffer) el.modalMediaOffer.hidden = true;
+    if (mediaOfferResolve) {
+      mediaOfferResolve(!!ok);
+      mediaOfferResolve = null;
+    }
+  }
+
+  function statusLabel(st) {
+    return (
+      {
+        online: "🟢 Çevrimiçi",
+        idle: "🌙 Boşta",
+        dnd: "⛔ Rahatsız etme",
+        invisible: "⚫ Görünmez",
+      }[st] || "🟢 Çevrimiçi"
+    );
+  }
+
+  function updateMyStatusDot() {
+    if (!el.myStatusDot) return;
+    const st = (me && me.status) || "online";
+    el.myStatusDot.className = "status-dot " + st;
+    el.myStatusDot.title = statusLabel(st);
+  }
+
+  // ---------- utils ----------
+  async function peerIdOf(username) {
+    const raw = "ikili::user::" + String(username).trim().toLowerCase();
+    const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(raw));
+    const hex = [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
+    return ("u" + hex).slice(0, 16);
+  }
+
+  function fmtTime(ts) {
+    try {
+      return new Date(ts).toLocaleString("tr-TR", {
+        hour: "2-digit",
+        minute: "2-digit",
+        day: "2-digit",
+        month: "2-digit",
+      });
+    } catch {
+      return "";
+    }
+  }
+
+  function fmtSize(n) {
+    if (n < 1024) return n + " B";
+    if (n < 1024 * 1024) return (n / 1024).toFixed(1) + " KB";
+    if (n < 1024 * 1024 * 1024) return (n / (1024 * 1024)).toFixed(1) + " MB";
+    return (n / (1024 * 1024 * 1024)).toFixed(2) + " GB";
+  }
+
+  function accelToLabel(accel) {
+    if (!accel) return "";
+    return accel
+      .replace(/CommandOrControl/g, "Ctrl")
+      .replace(/Control/g, "Ctrl")
+      .replace(/\+/g, " + ");
+  }
+
+  function eventToAccel(e) {
+    const parts = [];
+    if (e.ctrlKey || e.metaKey) parts.push("CommandOrControl");
+    if (e.altKey) parts.push("Alt");
+    if (e.shiftKey) parts.push("Shift");
+    const k = e.key;
+    if (["Control", "Shift", "Alt", "Meta"].includes(k)) return null;
+    let key = k.length === 1 ? k.toUpperCase() : k;
+    if (key === " ") key = "Space";
+    parts.push(key);
+    if (parts.length < 2 && !/^F\d+$/i.test(key)) return null; // en az modifier veya F tuşu
+    if (/^F\d+$/i.test(key) && parts.length === 1) return key;
+    return parts.join("+");
+  }
+
+  // ---------- UI shells ----------
+  function showAuth() {
+    el.viewAuth.hidden = false;
+    el.viewApp.hidden = true;
+  }
+
+  function showApp() {
+    el.viewAuth.hidden = true;
+    el.viewApp.hidden = false;
+    updateShellLayout();
+  }
+
+  function updateChatEmpty() {
+    if (!el.chatEmpty || !el.chatLog) return;
+    const hasMsgs = el.chatLog.children.length > 0;
+    el.chatEmpty.hidden = hasMsgs || !activeFriend;
+  }
+
+  function applyAvatarFrame(imgEl, frame, { editor = false } = {}) {
+    if (!imgEl) return;
+    const f = frame || settings.avatarFrame || { x: 50, y: 50, scale: 1 };
+    const x = f.x ?? 50;
+    const y = f.y ?? 50;
+    const s = Math.max(1, Math.min(3, f.scale ?? 1));
+    imgEl.style.objectFit = "cover";
+    imgEl.style.position = "absolute";
+    imgEl.style.left = "50%";
+    imgEl.style.top = "50%";
+    imgEl.style.width = `${100 * s}%`;
+    imgEl.style.height = `${100 * s}%`;
+    // object-position ile kaydırma + scale
+    imgEl.style.objectPosition = `${x}% ${y}%`;
+    imgEl.style.transform = "translate(-50%, -50%)";
+    imgEl.style.maxWidth = "none";
+    imgEl.style.userSelect = "none";
+    imgEl.draggable = false;
+    if (!editor) {
+      // küçük avatarlarda da aynı mantık
+      imgEl.style.width = `${100 * s}%`;
+      imgEl.style.height = `${100 * s}%`;
+    }
+  }
+
+  function setMyAvatar(url) {
+    if (url) {
+      el.myAvatarImg.src = url;
+      el.myAvatarImg.hidden = false;
+      el.myAvatarFb.hidden = true;
+      applyAvatarFrame(el.myAvatarImg, settings.avatarFrame);
+    } else {
+      el.myAvatarImg.hidden = true;
+      el.myAvatarFb.hidden = false;
+      el.myAvatarFb.textContent = (me?.displayName || me?.username || "?")[0].toUpperCase();
+    }
+  }
+
+  function showTransfer(label, pct, detail) {
+    el.transferBar.hidden = false;
+    el.transferLabel.textContent = label;
+    const p = Math.max(0, Math.min(100, Math.round(pct)));
+    el.transferPct.textContent = p + "%";
+    el.transferFill.style.width = p + "%";
+    el.transferDetail.textContent = detail || "";
+  }
+
+  function hideTransfer() {
+    el.transferBar.hidden = true;
+    el.transferFill.style.width = "0%";
+  }
+
+  function setMediaHeight(h) {
+    const v = Math.max(120, Math.min(420, Number(h) || 220));
+    if (el.mediaDock) {
+      // vh ile sınırlı: hem slider hem pencere yüksekliğine uyum
+      const vh = Math.max(14, Math.min(40, Math.round((v / (window.innerHeight || 800)) * 100)));
+      el.mediaDock.style.setProperty("--media-h", `min(${v}px, ${vh}vh)`);
+    }
+    if (el.mediaHeight) el.mediaHeight.value = String(v);
+  }
+
+  function setChatExpanded(on) {
+    chatExpanded = !!on;
+    if (el.stage) el.stage.classList.toggle("chat-expanded", chatExpanded);
+    el.mediaDock.classList.toggle("chat-expanded", chatExpanded);
+    if (el.btnToggleChat) {
+      el.btnToggleChat.textContent = chatExpanded ? "💬 Sohbeti küçült" : "💬 Sohbeti genişlet";
+    }
+  }
+
+  function setPeerHeader(friend) {
+    if (!friend) {
+      el.peerTitle.textContent = "Bir arkadaş seç";
+      el.peerSub.textContent = "Soldan birine tıkla veya arkadaş ekle";
+      el.stageActions.hidden = true;
+      el.peerAvatar.textContent = "?";
+      el.peerAvatar.innerHTML = "?";
+      return;
+    }
+    el.peerTitle.textContent = friend.displayName || friend.username;
+    const st = presence.get(friend.username) || "offline";
+    el.peerSub.textContent =
+      st === "online" ? "Çevrimiçi" : st === "busy" ? "Görüşmede" : "Çevrimdışı";
+    el.stageActions.hidden = false;
+    el.remoteTag.textContent = friend.displayName || friend.username;
+    const av = remoteAvatars.get(friend.username);
+    if (av) {
+      el.peerAvatar.innerHTML = "";
+      const img = document.createElement("img");
+      img.src = av;
+      img.alt = "";
+      el.peerAvatar.appendChild(img);
+    } else {
+      el.peerAvatar.textContent = (friend.displayName || friend.username)[0].toUpperCase();
+    }
+    updateCallButtons();
+  }
+
+  function chatKey() {
+    if (activeGroupId) return activeGroupId;
+    return activeFriend;
+  }
+
+  function updateCallButtons() {
+    const key = chatKey();
+    if (!key) {
+      el.stageActions.hidden = true;
+      if (el.chatSearchWrap) el.chatSearchWrap.hidden = true;
+      return;
+    }
+    el.stageActions.hidden = false;
+    if (el.chatSearchWrap) el.chatSearchWrap.hidden = false;
+    // Çevrimdışı da aranabilir; buton hep aktif (görüşme dışındayken)
+    el.btnCall.disabled = inCall;
+    el.btnCall.hidden = inCall;
+    el.btnHangup.hidden = !inCall;
+    el.btnFile.disabled = false;
+    if (el.btnScreen) el.btnScreen.disabled = !inCall;
+    setScreenBtnUi();
+    el.chatInput.disabled = false;
+    el.btnSend.disabled = false;
+  }
+
+  function friendStatusLabel(f, st) {
+    const remoteSt = f.remoteStatus || "";
+    if (st === "busy") return "Görüşmede";
+    if (st === "online") {
+      if (remoteSt === "dnd") return "Rahatsız etme";
+      if (remoteSt === "idle") return "Boşta";
+      return "Çevrimiçi";
+    }
+    return "Çevrimdışı";
+  }
+
+  function updateGroupSelectionUi() {
+    const n = selectedFriends.size;
+    if (el.btnGroupFromSelection) {
+      el.btnGroupFromSelection.hidden = n < 1;
+      el.btnGroupFromSelection.title = n ? `${n} seçili — grup oluştur / ara` : "";
+    }
+  }
+
+  function makeFriendRow(f) {
+    const st = presence.get(f.username) || "offline";
+    const row = document.createElement("div");
+    row.className =
+      "friend-item" +
+      (activeFriend === f.username && !activeGroupId ? " active" : "") +
+      (selectedFriends.has(f.username) ? " selected" : "");
+
+    const check = document.createElement("input");
+    check.type = "checkbox";
+    check.className = "friend-check";
+    check.checked = selectedFriends.has(f.username);
+    check.title = "Grup seçimi";
+    check.addEventListener("click", (e) => e.stopPropagation());
+    check.addEventListener("change", () => {
+      if (check.checked) selectedFriends.add(f.username);
+      else selectedFriends.delete(f.username);
+      updateGroupSelectionUi();
+      row.classList.toggle("selected", check.checked);
+    });
+
+    const av = document.createElement("div");
+    av.className = "avatar";
+    const remote = remoteAvatars.get(f.username);
+    if (remote) {
+      const img = document.createElement("img");
+      img.src = remote;
+      av.appendChild(img);
+    } else av.textContent = (f.displayName || f.username)[0].toUpperCase();
+
+    const meta = document.createElement("div");
+    meta.className = "meta";
+    const dotCls = st === "busy" ? "busy" : st === "online" ? "on" : "";
+    meta.innerHTML = `<div class="name"></div><div class="sub"><span class="dot ${dotCls}"></span><span></span></div>`;
+    meta.querySelector(".name").textContent = f.displayName || f.username;
+    meta.querySelector(".sub span:last-child").textContent =
+      (f.statusText ? f.statusText + " · " : "") + friendStatusLabel(f, st);
+
+    row.appendChild(check);
+    row.appendChild(av);
+    row.appendChild(meta);
+    const uc = unread.get(f.username) || 0;
+    if (uc > 0) {
+      const badge = document.createElement("span");
+      badge.className = "badge-unread";
+      badge.textContent = uc > 99 ? "99+" : String(uc);
+      row.appendChild(badge);
+    }
+    row.addEventListener("click", (e) => {
+      if (e.target === check) return;
+      openFriend(f.username);
+    });
+    return row;
+  }
+
+  function renderFriends() {
+    el.friendList.innerHTML = "";
+    if (!friends.length) {
+      const d = document.createElement("div");
+      d.className = "empty-friends";
+      d.innerHTML =
+        "<div class='empty-icon'>👥</div><p style='margin:8px 0 4px;font-weight:700;color:var(--text)'>Henüz arkadaş yok</p><small>＋ ile kullanıcı adı ekle</small>";
+      el.friendList.appendChild(d);
+      updateGroupSelectionUi();
+      return;
+    }
+    const online = [];
+    const offline = [];
+    for (const f of friends) {
+      const st = presence.get(f.username) || "offline";
+      if (st === "online" || st === "busy") online.push(f);
+      else offline.push(f);
+    }
+    const sortFn = (a, b) => (a.displayName || a.username).localeCompare(b.displayName || b.username, "tr");
+    online.sort(sortFn);
+    offline.sort(sortFn);
+
+    const section = (title, list, collapsed, toggle) => {
+      const sec = document.createElement("div");
+      sec.className = "friend-section" + (collapsed ? " collapsed" : "");
+      const head = document.createElement("button");
+      head.type = "button";
+      head.className = "friend-section-title";
+      head.innerHTML = `<span class="chev">${collapsed ? "▶" : "▼"}</span><span></span><span class="section-count"></span>`;
+      head.querySelectorAll("span")[1].textContent = title;
+      head.querySelector(".section-count").textContent = String(list.length);
+      head.addEventListener("click", toggle);
+      const body = document.createElement("div");
+      body.className = "friend-section-body";
+      list.forEach((f) => body.appendChild(makeFriendRow(f)));
+      sec.appendChild(head);
+      sec.appendChild(body);
+      return sec;
+    };
+
+    el.friendList.appendChild(
+      section("Çevrimiçi", online, friendsOnlineCollapsed, () => {
+        friendsOnlineCollapsed = !friendsOnlineCollapsed;
+        if (me) api.saveSettings(me.id, { friendsOnlineCollapsed });
+        renderFriends();
+      })
+    );
+    el.friendList.appendChild(
+      section("Çevrimdışı", offline, friendsOfflineCollapsed, () => {
+        friendsOfflineCollapsed = !friendsOfflineCollapsed;
+        if (me) api.saveSettings(me.id, { friendsOfflineCollapsed });
+        renderFriends();
+      })
+    );
+    updateGroupSelectionUi();
+  }
+
+  function renderGroups() {
+    if (!el.groupList) return;
+    el.groupList.innerHTML = "";
+    if (!groups.length) {
+      if (el.groupEmpty) el.groupEmpty.hidden = false;
+      return;
+    }
+    if (el.groupEmpty) el.groupEmpty.hidden = true;
+    for (const g of groups) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "group-item" + (activeGroupId === g.id ? " active" : "");
+      const onlineN = (g.members || []).filter((m) => {
+        const st = presence.get(m);
+        return st === "online" || st === "busy";
+      }).length;
+      btn.innerHTML = `<strong></strong><small></small>`;
+      btn.querySelector("strong").textContent = g.name;
+      btn.querySelector("small").textContent = `${g.members.length} üye · ${onlineN} çevrimiçi`;
+      const actions = document.createElement("div");
+      actions.className = "group-item-actions";
+      const callBtn = document.createElement("button");
+      callBtn.type = "button";
+      callBtn.className = "btn soft sm";
+      callBtn.textContent = "📞 Ara";
+      callBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        openGroup(g.id).then(() => startGroupCall(g));
+      });
+      actions.appendChild(callBtn);
+      btn.appendChild(actions);
+      btn.addEventListener("click", () => openGroup(g.id));
+      el.groupList.appendChild(btn);
+    }
+  }
+
+  function scrollChatToBottom(force) {
+    const box = el.chatLog;
+    const nearBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 80;
+    if (force || nearBottom) box.scrollTop = box.scrollHeight;
+  }
+
+  function renderMessage(m, { scroll = true, grouped = false } = {}) {
+    const div = document.createElement("div");
+    div.dataset.mid = m.id || "";
+    if (m.kind === "missed-call" || m.type === "missed-call") {
+      div.className = "msg missed-call";
+      div.textContent = m.text || "📞 Cevapsız çağrı";
+      el.chatLog.appendChild(div);
+      if (scroll) scrollChatToBottom(true);
+      updateChatEmpty();
+      return;
+    }
+    if (m.type === "system") {
+      div.className = "msg system";
+      div.textContent = m.text;
+    } else if (m.deleted || m.kind === "deleted") {
+      div.className = "msg deleted" + (m.from === me.username ? " mine" : "");
+      div.textContent = "Mesaj silindi";
+    } else {
+      const mine = m.from === me.username;
+      div.className =
+        "msg" +
+        (mine ? " mine" : "") +
+        (m.kind === "file" ? " file" : "") +
+        (grouped ? " grouped" : "");
+      if (m.replyTo && m.replyTo.text) {
+        const ref = document.createElement("div");
+        ref.className = "reply-ref";
+        ref.textContent = `↩ ${m.replyTo.from || ""}: ${(m.replyTo.text || "").slice(0, 80)}`;
+        div.appendChild(ref);
+      }
+      if (!grouped) {
+        const head = document.createElement("div");
+        head.className = "msg-head";
+        const av = document.createElement("div");
+        av.className = "avatar sm";
+        const letter = (mine ? me.displayName || me.username : m.displayName || m.from || "?")[0].toUpperCase();
+        if (mine && el.myAvatarImg && !el.myAvatarImg.hidden && el.myAvatarImg.src) {
+          const im = document.createElement("img");
+          im.src = el.myAvatarImg.src;
+          applyAvatarFrame(im, settings.avatarFrame);
+          av.appendChild(im);
+        } else if (!mine && remoteAvatars.get(m.from)) {
+          const im = document.createElement("img");
+          im.src = remoteAvatars.get(m.from);
+          av.appendChild(im);
+        } else {
+          av.textContent = letter;
+        }
+        av.title = "Profili aç";
+        av.addEventListener("click", () => openProfile(mine ? me.username : m.from, mine));
+        const who = document.createElement("span");
+        who.className = "who";
+        who.textContent = mine ? me.displayName || me.username : m.displayName || m.from;
+        who.style.cursor = "pointer";
+        who.addEventListener("click", () => openProfile(mine ? me.username : m.from, mine));
+        head.appendChild(av);
+        head.appendChild(who);
+        div.appendChild(head);
+      }
+
+      if (m.kind === "gif" && m.url) {
+        const img = document.createElement("img");
+        img.className = "gif";
+        img.src = m.url;
+        img.alt = "gif";
+        div.appendChild(img);
+      } else if (m.kind === "image" || m.kind === "video" || (m.kind === "file" && isMediaFileName(m.name))) {
+        const kind = m.kind === "video" || mediaKind(m.name) === "video" ? "video" : "image";
+        if (m.previewUrl) {
+          if (kind === "video") {
+            const v = document.createElement("video");
+            v.className = "preview";
+            v.src = m.previewUrl;
+            v.controls = true;
+            div.appendChild(v);
+          } else {
+            const img = document.createElement("img");
+            img.className = "preview";
+            img.src = m.previewUrl;
+            img.alt = m.name || "medya";
+            div.appendChild(img);
+          }
+        } else {
+          div.appendChild(document.createTextNode(`📎 ${m.name || "medya"}`));
+        }
+        const actions = document.createElement("div");
+        actions.className = "media-actions";
+        if (m.localPath) {
+          const b1 = document.createElement("button");
+          b1.type = "button";
+          b1.className = "btn soft sm";
+          b1.textContent = "Klasör";
+          b1.addEventListener("click", () => api.openPath(m.localPath));
+          actions.appendChild(b1);
+        }
+        div.appendChild(actions);
+      } else if (m.kind === "file") {
+        div.appendChild(document.createTextNode(`📎 ${m.name} (${fmtSize(m.size || 0)}) `));
+        if (m.localPath) {
+          const a = document.createElement("a");
+          a.href = "#";
+          a.textContent = "Klasörde göster";
+          a.addEventListener("click", (e) => {
+            e.preventDefault();
+            api.openPath(m.localPath);
+          });
+          div.appendChild(a);
+        }
+      } else {
+        const body = document.createElement("span");
+        body.className = "msg-body";
+        body.textContent = m.text || "";
+        div.appendChild(body);
+      }
+
+      if (m.reactions && Object.keys(m.reactions).length) {
+        const rx = document.createElement("div");
+        rx.className = "reactions";
+        for (const [emoji, users] of Object.entries(m.reactions)) {
+          const b = document.createElement("button");
+          b.type = "button";
+          b.textContent = `${emoji} ${users.length}`;
+          b.addEventListener("click", () => reactToMessage(m.id, emoji));
+          rx.appendChild(b);
+        }
+        div.appendChild(rx);
+      }
+
+      const time = document.createElement("span");
+      time.className = "time";
+      time.textContent = fmtTime(m.ts) + (m.editedAt ? " · düzenlendi" : "");
+      div.appendChild(time);
+
+      // Sağ tık menüsü
+      div.addEventListener("contextmenu", (e) => {
+        e.preventDefault();
+        showMsgContext(e.clientX, e.clientY, m);
+      });
+    }
+    el.chatLog.appendChild(div);
+    if (scroll) scrollChatToBottom(m.from === me.username);
+    updateChatEmpty();
+  }
+
+  function hideMsgContext() {
+    if (el.msgContextMenu) el.msgContextMenu.hidden = true;
+    ctxTargetMessage = null;
+  }
+
+  function showMsgContext(x, y, m) {
+    if (!el.msgContextMenu) return;
+    ctxTargetMessage = m;
+    const menu = el.msgContextMenu;
+    menu.hidden = false;
+    const mine = m.from === me.username;
+    const editBtn = menu.querySelector('[data-act="edit"]');
+    const delBtn = menu.querySelector('[data-act="delete"]');
+    if (editBtn) editBtn.hidden = !mine || m.kind === "file" || m.kind === "gif" || m.kind === "image" || m.kind === "video";
+    if (delBtn) delBtn.hidden = !mine;
+    const pad = 8;
+    const mw = menu.offsetWidth || 160;
+    const mh = menu.offsetHeight || 200;
+    menu.style.left = Math.min(x, window.innerWidth - mw - pad) + "px";
+    menu.style.top = Math.min(y, window.innerHeight - mh - pad) + "px";
+  }
+
+  function shouldGroupMessages(prev, curr) {
+    if (!prev || !curr) return false;
+    if (prev.type === "system" || curr.type === "system") return false;
+    if (prev.kind === "missed-call" || curr.kind === "missed-call") return false;
+    if (prev.deleted || curr.deleted) return false;
+    if (prev.from !== curr.from) return false;
+    if ((curr.ts || 0) - (prev.ts || 0) > 5 * 60 * 1000) return false;
+    return true;
+  }
+
+  async function openProfile(username, isSelf) {
+    const un = String(username || "").toLowerCase();
+    const self = !!(isSelf || un === me.username);
+    let data = self ? me : profileCache.get(un);
+    if (!data) {
+      const f = friends.find((x) => x.username === un);
+      data = {
+        username: un,
+        displayName: f?.displayName || un,
+        about: f?.about || "",
+        socials: f?.socials || {},
+        status: f?.remoteStatus || "online",
+        statusText: f?.statusText || "",
+      };
+    }
+    const avUrl = self ? await api.getAvatar(me.id) : remoteAvatars.get(un);
+    el.profileAvatar.innerHTML = "";
+    if (avUrl) {
+      const im = document.createElement("img");
+      im.src = avUrl;
+      if (self) applyAvatarFrame(im, settings.avatarFrame);
+      el.profileAvatar.appendChild(im);
+    } else {
+      el.profileAvatar.textContent = (data.displayName || data.username || "?")[0].toUpperCase();
+    }
+    el.profileDisplay.textContent = data.displayName || data.username;
+    el.profileUsername.textContent = "@" + (data.username || un);
+    el.profileStatusLine.textContent =
+      statusLabel(data.status || "online") + (data.statusText ? " · " + data.statusText : "");
+
+    const ro = $("profile-view-readonly");
+    const ed = $("profile-view-edit");
+    const saveBtn = $("btn-profile-save");
+    if (self) {
+      if (ro) ro.hidden = true;
+      if (ed) ed.hidden = false;
+      if (saveBtn) saveBtn.hidden = false;
+      if (el.btnProfileEdit) el.btnProfileEdit.hidden = true;
+      const d = $("profile-edit-display");
+      const a = $("profile-edit-about");
+      if (d) d.value = me.displayName || "";
+      if (a) a.value = me.about || "";
+      if ($("profile-edit-twitter")) $("profile-edit-twitter").value = me.socials?.twitter || "";
+      if ($("profile-edit-youtube")) $("profile-edit-youtube").value = me.socials?.youtube || "";
+      if ($("profile-edit-instagram")) $("profile-edit-instagram").value = me.socials?.instagram || "";
+      if ($("profile-edit-web")) $("profile-edit-web").value = me.socials?.website || "";
+    } else {
+      if (ro) ro.hidden = false;
+      if (ed) ed.hidden = true;
+      if (saveBtn) saveBtn.hidden = true;
+      if (el.btnProfileEdit) el.btnProfileEdit.hidden = true;
+      el.profileAbout.textContent = data.about || "Henüz bir bio yok.";
+      el.profileSocials.innerHTML = "";
+      const socials = data.socials || {};
+      for (const [k, v] of Object.entries(socials)) {
+        if (!v) continue;
+        const li = document.createElement("li");
+        const a = document.createElement("a");
+        a.href = v;
+        a.textContent = k + ": " + v;
+        a.target = "_blank";
+        li.appendChild(a);
+        el.profileSocials.appendChild(li);
+      }
+      if (!el.profileSocials.children.length) {
+        el.profileSocials.innerHTML = "<li>Bağlantı yok</li>";
+      }
+    }
+    el.modalProfile.hidden = false;
+  }
+
+  async function editMessage(m) {
+    const key = chatKey();
+    if (!key) return;
+    const next = prompt("Mesajı düzenle:", m.text || "");
+    if (next == null) return;
+    const text = next.trim();
+    if (!text) return;
+    await api.updateChat(me.id, key, m.id, { text });
+    for (const u of recipientsForChat()) {
+      sendTo(u, { type: "chat-edit", id: m.id, text, ts: Date.now(), groupId: activeGroupId });
+    }
+    await reloadChat();
+  }
+
+  async function deleteMessage(m) {
+    const key = chatKey();
+    if (!key) return;
+    if (!confirm("Mesaj silinsin mi?")) return;
+    await api.deleteChat(me.id, key, m.id);
+    for (const u of recipientsForChat()) {
+      sendTo(u, { type: "chat-delete", id: m.id, groupId: activeGroupId });
+    }
+    await reloadChat();
+  }
+
+  async function reactToMessage(messageId, emoji) {
+    const key = chatKey();
+    if (!key || !messageId) return;
+    for (const u of recipientsForChat()) {
+      sendTo(u, { type: "chat-react", id: messageId, emoji, from: me.username, groupId: activeGroupId });
+    }
+    const history = await api.getChat(me.id, key, 500);
+    const msg = history.find((x) => x.id === messageId);
+    if (!msg) return;
+    const reactions = { ...(msg.reactions || {}) };
+    const arr = new Set(reactions[emoji] || []);
+    if (arr.has(me.username)) arr.delete(me.username);
+    else arr.add(me.username);
+    reactions[emoji] = [...arr];
+    if (!reactions[emoji].length) delete reactions[emoji];
+    await api.updateChat(me.id, key, messageId, { reactions });
+    await reloadChat();
+  }
+
+  async function pinMessage(m) {
+    const key = chatKey();
+    if (!key) return;
+    let pins = await api.getPins(me.id, key);
+    if (pins.some((p) => p.id === m.id)) {
+      pins = pins.filter((p) => p.id !== m.id);
+      await api.setPins(me.id, key, pins);
+      renderPins(pins);
+      renderMessage({ type: "system", text: "Sabitleme kaldırıldı." });
+      return;
+    }
+    pins.unshift({
+      id: m.id,
+      text: (m.text || m.name || "").slice(0, 120),
+      from: m.from,
+      ts: m.ts,
+    });
+    await api.setPins(me.id, key, pins.slice(0, 20));
+    renderPins(pins);
+  }
+
+  function renderPins(pins) {
+    if (!el.pinsBar) return;
+    if (!pins || !pins.length) {
+      el.pinsBar.hidden = true;
+      el.pinsList.innerHTML = "";
+      return;
+    }
+    el.pinsBar.hidden = false;
+    el.pinsList.innerHTML = "";
+    for (const p of pins.slice(0, 8)) {
+      const d = document.createElement("div");
+      d.className = "pin-item";
+      d.textContent = `${p.from}: ${p.text}`;
+      const unpin = document.createElement("button");
+      unpin.type = "button";
+      unpin.textContent = "✕";
+      unpin.title = "Sabitlemeyi kaldır";
+      unpin.style.marginLeft = "8px";
+      unpin.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        const key = chatKey();
+        if (!key) return;
+        const next = (await api.getPins(me.id, key)).filter((x) => x.id !== p.id);
+        await api.setPins(me.id, key, next);
+        renderPins(next);
+      });
+      d.appendChild(unpin);
+      el.pinsList.appendChild(d);
+    }
+  }
+
+  async function reloadChat() {
+    const key = chatKey();
+    if (!key) {
+      if (el.chatLog) el.chatLog.innerHTML = "";
+      updateChatEmpty();
+      return;
+    }
+    el.chatLog.innerHTML = "";
+    const history = await api.getChat(me.id, key, 500);
+    let prev = null;
+    for (const m of history) {
+      renderMessage(m, { scroll: false, grouped: shouldGroupMessages(prev, m) });
+      prev = m;
+    }
+    scrollChatToBottom(true);
+    const pins = await api.getPins(me.id, key);
+    renderPins(pins);
+    updateChatEmpty();
+    if (el.chatSearch) el.chatSearch.value = "";
+    if (el.chatSearchCount) el.chatSearchCount.textContent = "";
+  }
+
+  async function persistAndShow(targetKey, message, { show = true } = {}) {
+    await api.appendChat(me.id, targetKey, message);
+    const visible = chatKey() === targetKey;
+    if (show && visible) {
+      const history = await api.getChat(me.id, targetKey, 3);
+      const prev = history.length >= 2 ? history[history.length - 2] : null;
+      renderMessage(message, { grouped: shouldGroupMessages(prev, message) });
+      updateChatEmpty();
+    }
+  }
+
+  async function openGroup(groupId) {
+    const g = groups.find((x) => x.id === groupId) || (await api.getGroup(me.id, groupId));
+    if (!g) return;
+    activeGroupId = g.id;
+    activeFriend = null;
+    unread.set(g.id, 0);
+    el.peerTitle.textContent = g.name;
+    el.peerSub.textContent = g.members.map((m) => "@" + m).join(", ");
+    el.peerAvatar.textContent = "👥";
+    el.remoteTag.textContent = g.name;
+    el.stageActions.hidden = false;
+    updateCallButtons();
+    renderFriends();
+    renderGroups();
+    await reloadChat();
+  }
+
+  // ---------- audio / mic ----------
+  async function ensureMicGraph(forceRebuild = false) {
+    if (processedMicStream && !forceRebuild) return processedMicStream;
+    if (rawMicStream) {
+      rawMicStream.getTracks().forEach((t) => t.stop());
+      rawMicStream = null;
+    }
+    if (audioCtx) {
+      try {
+        await audioCtx.close();
+      } catch {}
+      audioCtx = null;
+    }
+    processedMicStream = null;
+    micGain = null;
+
+    // Chromium açık kaynak gürültü engelleme (RNNoise tabanlı) + AEC
+    rawMicStream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: !!noiseOn,
+        autoGainControl: true,
+        channelCount: 1,
+      },
+      video: false,
+    });
+    audioCtx = new AudioContext();
+    const src = audioCtx.createMediaStreamSource(rawMicStream);
+    micGain = audioCtx.createGain();
+    const dest = audioCtx.createMediaStreamDestination();
+    src.connect(micGain);
+    micGain.connect(dest);
+    applyMicVolume(settings.micVolume ?? 100);
+    processedMicStream = dest.stream;
+    applyMicEnabled();
+    return processedMicStream;
+  }
+
+  function applyMicEnabled() {
+    const on = micOn && !deafened;
+    if (processedMicStream) {
+      processedMicStream.getAudioTracks().forEach((t) => {
+        t.enabled = on;
+      });
+    }
+    if (rawMicStream) {
+      rawMicStream.getAudioTracks().forEach((t) => {
+        t.enabled = on;
+      });
+    }
+  }
+
+  function applyMicVolume(pct) {
+    const v = Math.max(0, Math.min(200, Number(pct) || 100));
+    if (el.micVol) el.micVol.value = String(v);
+    if (el.micVolVal) el.micVolVal.textContent = v + "%";
+    if (micGain) micGain.gain.value = v / 100;
+  }
+
+  function applyVoiceVolume(pct) {
+    const v = Math.max(0, Math.min(200, Number(pct) || 100));
+    if (el.outVol) el.outVol.value = String(v);
+    if (el.outVolVal) el.outVolVal.textContent = v + "%";
+    // Deafen: çağrı sesi tamamen kapalı
+    el.remoteAudio.volume = deafened ? 0 : Math.min(1, v / 100);
+  }
+
+  function applyScreenAudioVolume(pct) {
+    const v = Math.max(0, Math.min(200, Number(pct) || 100));
+    if (el.screenAudioVol) el.screenAudioVol.value = String(v);
+    if (el.screenAudioVolVal) el.screenAudioVolVal.textContent = v + "%";
+    if (el.remoteScreenAudio) {
+      el.remoteScreenAudio.volume = deafened ? 0 : Math.min(1, v / 100);
+    }
+  }
+
+  // geriye uyum
+  function applyOutputVolume(pct) {
+    applyVoiceVolume(pct);
+  }
+
+  function setMicUi() {
+    if (!el.btnMic) return;
+    el.btnMic.textContent = "🎤";
+    el.btnMic.title = micOn && !deafened ? "Mikrofon açık" : "Mikrofon kapalı";
+    el.btnMic.className =
+      "icon-ctrl " + (micOn && !deafened ? "active-mic" : "muted-mic");
+  }
+
+  function setDeafenUi() {
+    if (!el.btnDeafen) return;
+    el.btnDeafen.textContent = deafened ? "🔇" : "🔊";
+    el.btnDeafen.title = deafened ? "Deafen açık" : "Deafen kapalı";
+    el.btnDeafen.className = "icon-ctrl" + (deafened ? " deafened" : "");
+  }
+
+  function setNoiseUi() {
+    if (!el.btnNoise) return;
+    el.btnNoise.textContent = "🧹";
+    el.btnNoise.title = noiseOn ? "Gürültü engelleme açık" : "Gürültü engelleme kapalı";
+    el.btnNoise.className = "icon-ctrl" + (noiseOn ? " active-mic" : "");
+  }
+
+  function setScreenBtnUi() {
+    if (!el.btnScreen) return;
+    el.btnScreen.textContent = "🖥️";
+    el.btnScreen.title = screenStream ? "Paylaşımı durdur" : "Ekran paylaş";
+    el.btnScreen.className = "icon-ctrl" + (screenStream ? " active-mic" : "");
+  }
+
+  function toggleMic() {
+    if (deafened) {
+      // Deafen açıkken mic zaten kapalı; kullanıcı açmaya çalışırsa uyar
+      renderMessage({ type: "system", text: "Deafen açıkken mikrofon kapalı kalır. Önce deafen kapat." });
+      return;
+    }
+    micOn = !micOn;
+    applyMicEnabled();
+    setMicUi();
+  }
+
+  let preDeafenMicOn = true;
+  let preDeafenScreenVol = 100;
+
+  function toggleDeafen() {
+    if (!deafened) {
+      preDeafenOutput = Number(el.outVol.value) || settings.outputVolume || 100;
+      preDeafenScreenVol = Number(el.screenAudioVol?.value) || settings.screenAudioVolume || 100;
+      preDeafenMicOn = micOn;
+      deafened = true;
+      micOn = false;
+      applyMicEnabled();
+      setMicUi();
+      // Hem çağrı hem ekran sesi kapansın
+      el.remoteAudio.volume = 0;
+      if (el.remoteScreenAudio) el.remoteScreenAudio.volume = 0;
+      el.remoteAudio.muted = true;
+      if (el.remoteScreenAudio) el.remoteScreenAudio.muted = true;
+    } else {
+      deafened = false;
+      el.remoteAudio.muted = false;
+      if (el.remoteScreenAudio) el.remoteScreenAudio.muted = false;
+      applyVoiceVolume(preDeafenOutput || settings.outputVolume || 100);
+      applyScreenAudioVolume(preDeafenScreenVol || settings.screenAudioVolume || 100);
+      micOn = preDeafenMicOn;
+      applyMicEnabled();
+      setMicUi();
+    }
+    setDeafenUi();
+  }
+
+  async function toggleNoise() {
+    noiseOn = !noiseOn;
+    setNoiseUi();
+    settings.noiseSuppression = noiseOn;
+    if (me) await api.saveSettings(me.id, { noiseSuppression: noiseOn });
+    // Yeniden bağla (görüşmedeyse stream yenilenir)
+    try {
+      const old = processedMicStream;
+      await ensureMicGraph(true);
+      if (inCall && mediaCall && mediaCall.peerConnection) {
+        const pc = mediaCall.peerConnection;
+        const sender = pc.getSenders().find((s) => s.track && s.track.kind === "audio");
+        const track = processedMicStream.getAudioTracks()[0];
+        if (sender && track) await sender.replaceTrack(track);
+      }
+      if (old) {
+        /* eski graph kapandı */
+      }
+      renderMessage({
+        type: "system",
+        text: noiseOn ? "Gürültü engelleme açıldı (WebRTC/RNNoise)." : "Gürültü engelleme kapatıldı.",
+      });
+    } catch (e) {
+      console.warn(e);
+    }
+  }
+
+  function cancelTransfer(reason) {
+    transferCancelled = true;
+    if (activeTransferId && activeFriend) {
+      sendTo(activeFriend, { type: "file-abort", id: activeTransferId, reason: reason || "cancelled" });
+    }
+    if (recvFile) {
+      sendTo(recvFile.from, { type: "file-abort", id: recvFile.id, reason: reason || "cancelled" });
+      recvFile = null;
+    }
+    activeTransferId = null;
+    sendFileBusy = false;
+    hideTransfer();
+  }
+
+  // ---------- peer / presence ----------
+  function sendTo(username, obj) {
+    const c = conns.get(username);
+    if (c && c.open) {
+      try {
+        c.send(obj);
+        return true;
+      } catch (e) {
+        console.warn(e);
+      }
+    }
+    return false;
+  }
+
+  function setPresence(username, state) {
+    presence.set(username, state);
+    renderFriends();
+    if (activeFriend === username) {
+      setPeerHeader(friends.find((f) => f.username === username));
+      updateCallButtons();
+    }
+  }
+
+  function wireConn(username, conn) {
+    if (conns.get(username) === conn && conn._ikBound) return;
+    const prev = conns.get(username);
+    if (prev && prev !== conn) {
+      try {
+        prev.close();
+      } catch {}
+    }
+    conns.set(username, conn);
+    conn._ikBound = true;
+
+    const onOpen = async () => {
+      setPresence(username, inCall && callWith === username ? "busy" : "online");
+      const avatar = await api.getAvatar(me.id);
+      sendTo(username, {
+        type: "hello",
+        username: me.username,
+        displayName: me.displayName,
+        avatar,
+        status: me.status || "online",
+        statusText: me.statusText || "",
+        about: me.about || "",
+        socials: me.socials || {},
+      });
+    };
+    if (conn.open) onOpen();
+    else conn.on("open", onOpen);
+
+    conn.on("data", (raw) => onData(username, raw));
+    conn.on("close", () => {
+      if (conns.get(username) === conn) {
+        conns.delete(username);
+        setPresence(username, "offline");
+      }
+    });
+    conn.on("error", () => {});
+  }
+
+  async function onData(username, raw) {
+    // binary file chunk
+    if (raw instanceof ArrayBuffer || ArrayBuffer.isView(raw)) {
+      await onFileBinary(username, raw);
+      return;
+    }
+    let msg = raw;
+    if (typeof raw === "string") {
+      try {
+        msg = JSON.parse(raw);
+      } catch {
+        return;
+      }
+    }
+    if (!msg || !msg.type) return;
+
+    if (msg.type === "hello") {
+      const patch = {};
+      if (msg.displayName) patch.displayName = msg.displayName;
+      if (msg.status) patch.remoteStatus = msg.status;
+      if (msg.statusText != null) patch.statusText = msg.statusText;
+      if (msg.about != null) patch.about = msg.about;
+      if (msg.socials) patch.socials = msg.socials;
+      profileCache.set(username, {
+        username,
+        displayName: msg.displayName || username,
+        about: msg.about || "",
+        socials: msg.socials || {},
+        status: msg.status || "online",
+        statusText: msg.statusText || "",
+      });
+      if (Object.keys(patch).length) {
+        await api.updateFriend(me.id, username, patch);
+        friends = await api.listFriends(me.id);
+        renderFriends();
+      }
+      if (msg.avatar) {
+        remoteAvatars.set(username, msg.avatar);
+        renderFriends();
+        if (activeFriend === username) setPeerHeader(friends.find((f) => f.username === username));
+      }
+      return;
+    }
+
+    if (msg.type === "missed-call") {
+      const key = msg.groupId || username;
+      const m = {
+        id: crypto.randomUUID(),
+        type: "missed-call",
+        kind: "missed-call",
+        text: `📞 Cevapsız çağrı ← @${msg.from || username}`,
+        from: msg.from || username,
+        ts: msg.ts || Date.now(),
+      };
+      await persistAndShow(key, m, { show: chatKey() === key });
+      if (chatKey() !== key) {
+        unread.set(key, (unread.get(key) || 0) + 1);
+        renderFriends();
+        renderGroups();
+      }
+      return;
+    }
+
+    if (msg.type === "chat" || msg.type === "gif") {
+      const key = msg.groupId || username;
+      const m = {
+        id: msg.id || crypto.randomUUID(),
+        type: "chat",
+        kind: msg.type === "gif" ? "gif" : "text",
+        text: msg.text || "",
+        url: msg.url || null,
+        from: username,
+        displayName: msg.displayName || username,
+        ts: msg.ts || Date.now(),
+        replyTo: msg.replyTo || null,
+        groupId: msg.groupId || null,
+      };
+      await persistAndShow(key, m, { show: chatKey() === key });
+      if (chatKey() !== key) {
+        unread.set(key, (unread.get(key) || 0) + 1);
+        renderFriends();
+        renderGroups();
+        if (settings.desktopNotify !== false) {
+          try {
+            new Notification(msg.displayName || username, {
+              body: (msg.text || "GIF/medya").slice(0, 120),
+              silent: true,
+            });
+          } catch {}
+        }
+        await playNotifyIfAllowed();
+      }
+      return;
+    }
+
+    if (msg.type === "chat-edit" && msg.id) {
+      await api.updateChat(me.id, username, msg.id, { text: msg.text });
+      if (activeFriend === username) await reloadChat();
+      return;
+    }
+    if (msg.type === "chat-delete" && msg.id) {
+      await api.deleteChat(me.id, username, msg.id);
+      if (activeFriend === username) await reloadChat();
+      return;
+    }
+    if (msg.type === "chat-react" && msg.id) {
+      const history = await api.getChat(me.id, username, 500);
+      const found = history.find((x) => x.id === msg.id);
+      if (found) {
+        const reactions = { ...(found.reactions || {}) };
+        const arr = new Set(reactions[msg.emoji] || []);
+        if (arr.has(msg.from)) arr.delete(msg.from);
+        else arr.add(msg.from);
+        reactions[msg.emoji] = [...arr];
+        if (!reactions[msg.emoji].length) delete reactions[msg.emoji];
+        await api.updateChat(me.id, username, msg.id, { reactions });
+        if (activeFriend === username) await reloadChat();
+      }
+      return;
+    }
+    if (msg.type === "presence") {
+      // durum bilgisi
+      await api.updateFriend(me.id, username, {
+        remoteStatus: msg.status,
+        statusText: msg.statusText || "",
+      });
+      friends = await api.listFriends(me.id);
+      renderFriends();
+      return;
+    }
+
+    if (msg.type === "file-start") {
+      const kind = msg.mediaKind || mediaKind(msg.name);
+      // Foto/video: indir / reddet seçeneği
+      if (kind === "image" || kind === "video") {
+        const ok = await askMediaOffer({
+          kind,
+          name: msg.name,
+          size: msg.size,
+          from: username,
+        });
+        if (!ok) {
+          sendTo(username, { type: "file-abort", id: msg.id });
+          return;
+        }
+      }
+      const savePath = await api.saveFileStart(msg.name, true);
+      if (!savePath) {
+        sendTo(username, { type: "file-abort", id: msg.id });
+        return;
+      }
+      recvFile = {
+        id: msg.id,
+        name: msg.name,
+        size: msg.size,
+        mime: msg.mime,
+        mediaKind: kind,
+        savePath,
+        offset: 0,
+        from: username,
+      };
+      showTransfer(`Alınıyor: ${msg.name}`, 0, `0 / ${fmtSize(msg.size)}`);
+      if (activeFriend === username) {
+        renderMessage({
+          type: "system",
+          text: `Dosya alınıyor: ${msg.name} (${fmtSize(msg.size)})…`,
+        });
+      }
+      sendTo(username, { type: "file-ready", id: msg.id });
+      return;
+    }
+
+    if (msg.type === "file-chunk" && recvFile && recvFile.id === msg.id && msg.b64) {
+      try {
+        await api.saveFileChunk(recvFile.savePath, msg.b64, msg.offset || recvFile.offset);
+        const len = msg.len || 0;
+        recvFile.offset = (msg.offset || 0) + len;
+        const pct = recvFile.size ? (recvFile.offset / recvFile.size) * 100 : 0;
+        showTransfer(
+          `Alınıyor: ${recvFile.name}`,
+          pct,
+          `${fmtSize(recvFile.offset)} / ${fmtSize(recvFile.size)}`
+        );
+        sendTo(username, { type: "file-ack", id: recvFile.id, offset: recvFile.offset });
+      } catch (e) {
+        console.error(e);
+        sendTo(username, { type: "file-abort", id: msg.id });
+        hideTransfer();
+        recvFile = null;
+      }
+      return;
+    }
+
+    if (msg.type === "file-end" && recvFile && recvFile.id === msg.id) {
+      let previewUrl = null;
+      const kind = recvFile.mediaKind || mediaKind(recvFile.name);
+      if (kind === "image" || kind === "video") {
+        try {
+          const prev = await api.filePreview(recvFile.savePath);
+          if (prev && prev.dataUrl) previewUrl = prev.dataUrl;
+        } catch {}
+      }
+      const done = {
+        id: crypto.randomUUID(),
+        type: "chat",
+        kind: kind === "image" || kind === "video" ? kind : "file",
+        name: recvFile.name,
+        size: recvFile.size,
+        localPath: recvFile.savePath,
+        previewUrl,
+        from: username,
+        displayName: username,
+        ts: Date.now(),
+      };
+      showTransfer(`Tamamlandı: ${recvFile.name}`, 100, fmtSize(recvFile.size));
+      setTimeout(hideTransfer, 2500);
+      await persistAndShow(username, done);
+      recvFile = null;
+      return;
+    }
+
+    if (msg.type === "file-abort") {
+      if (recvFile && recvFile.id === msg.id) recvFile = null;
+      if (activeTransferId === msg.id) {
+        transferCancelled = true;
+        activeTransferId = null;
+      }
+      hideTransfer();
+      if (activeFriend === username) {
+        renderMessage({ type: "system", text: "Dosya aktarımı iptal edildi." });
+      }
+      window.dispatchEvent(new CustomEvent("file-abort", { detail: msg }));
+      return;
+    }
+
+    if (msg.type === "file-ready" || msg.type === "file-ack") {
+      window.dispatchEvent(new CustomEvent(msg.type, { detail: msg }));
+      return;
+    }
+
+    if (msg.type === "screen-stop") {
+      el.remoteVideo.srcObject = null;
+      el.remotePh.hidden = false;
+    }
+  }
+
+  async function tryConnect(username) {
+    if (!peer || peer.destroyed) return;
+    const c = conns.get(username);
+    if (c && c.open) return;
+    try {
+      const pid = await peerIdOf(username);
+      const conn = peer.connect(pid, { reliable: true });
+      wireConn(username, conn);
+    } catch {}
+  }
+
+  function startPresenceLoop() {
+    clearInterval(presenceTimer);
+    presenceTimer = setInterval(() => {
+      for (const f of friends) tryConnect(f.username);
+    }, 4000);
+  }
+
+  async function startPeerNetwork() {
+    if (peer) {
+      try {
+        peer.destroy();
+      } catch {}
+      peer = null;
+    }
+    conns.clear();
+    const myPid = await peerIdOf(me.username);
+    el.netStatus.textContent = "Ağa bağlanıyor…";
+
+    peer = new Peer(myPid, { debug: 0, config: ICE });
+
+    peer.on("open", async (id) => {
+      el.netStatus.textContent = cloudMode ? "P2P + bulut hazır" : "Çevrimiçi ağı hazır";
+      for (const f of friends) tryConnect(f.username);
+      startPresenceLoop();
+      if (cloudMode && window.HearthCloud?.isEnabled()) {
+        try {
+          await window.HearthCloud.updateProfile({ peerId: id });
+        } catch (e) {
+          console.warn(e);
+        }
+      }
+    });
+
+    peer.on("connection", (conn) => {
+      // Arkadaş listesinde olmasa bile kabul et; hello ile kullanıcı adını öğrenip ekleriz
+      let bound = false;
+      const tryBind = async (username) => {
+        if (bound || !username) return;
+        bound = true;
+        const un = String(username).toLowerCase();
+        if (!friends.some((f) => f.username === un) && un !== me.username) {
+          try {
+            await api.addFriend(me.id, un);
+            friends = await api.listFriends(me.id);
+            renderFriends();
+          } catch {
+            /* zaten var */
+          }
+        }
+        wireConn(un, conn);
+      };
+
+      // Önce bilinen peer id ile eşleştir
+      (async () => {
+        for (const f of friends) {
+          const pid = await peerIdOf(f.username);
+          if (pid === conn.peer) {
+            await tryBind(f.username);
+            return;
+          }
+        }
+      })();
+
+      conn.on("data", (raw) => {
+        let msg = raw;
+        if (typeof raw === "string") {
+          try {
+            msg = JSON.parse(raw);
+          } catch {
+            return;
+          }
+        }
+        if (msg && msg.type === "hello" && msg.username) {
+          tryBind(msg.username).then(() => onData(String(msg.username).toLowerCase(), msg));
+        }
+      });
+
+      conn.on("open", async () => {
+        const avatar = await api.getAvatar(me.id);
+        try {
+          conn.send({
+            type: "hello",
+            username: me.username,
+            displayName: me.displayName,
+            avatar,
+          });
+        } catch {}
+      });
+    });
+
+    peer.on("call", async (call) => {
+      let fromUser = null;
+      for (const f of friends) {
+        const pid = await peerIdOf(f.username);
+        if (pid === call.peer) {
+          fromUser = f.username;
+          break;
+        }
+      }
+      if (!fromUser) {
+        call.close();
+        return;
+      }
+
+      const kind = (call.metadata && call.metadata.kind) || "audio";
+      if (kind === "screen") {
+        call.answer();
+        call.on("stream", (stream) => onMediaStream(stream, { isScreen: true }));
+        call.on("close", () => {
+          el.remoteVideo.srcObject = null;
+          el.remotePh.hidden = false;
+          if (el.remoteScreenAudio) el.remoteScreenAudio.srcObject = null;
+        });
+        return;
+      }
+
+      if (inCall) {
+        call.close();
+        return;
+      }
+      incomingCall = call;
+      callWith = fromUser;
+      el.incomingBar.hidden = false;
+      el.incomingText.textContent = `${fromUser} arıyor…`;
+      playIncomingRing();
+      api.notifyIncoming();
+      if (activeFriend !== fromUser) openFriend(fromUser);
+    });
+
+    peer.on("disconnected", () => {
+      el.netStatus.textContent = "Kopuk — yeniden…";
+      try {
+        peer.reconnect();
+      } catch {}
+    });
+
+    peer.on("error", (err) => {
+      if (err.type === "peer-unavailable") return;
+      if (err.type === "unavailable-id") {
+        el.netStatus.textContent = "Kimlik meşgul (program iki kez açık?)";
+      }
+    });
+  }
+
+  // ---------- chat open ----------
+  async function openFriend(username) {
+    activeFriend = username;
+    activeGroupId = null;
+    unread.set(username, 0);
+    const f = friends.find((x) => x.username === username);
+    setPeerHeader(f);
+    renderFriends();
+    renderGroups();
+    await reloadChat();
+    updateCallButtons();
+    tryConnect(username);
+  }
+
+  function recipientsForChat() {
+    if (activeGroupId) {
+      const g = groups.find((x) => x.id === activeGroupId);
+      return g ? g.members.filter((m) => m !== me.username) : [];
+    }
+    return activeFriend ? [activeFriend] : [];
+  }
+
+  async function sendChatText(text) {
+    const key = chatKey();
+    if (!key || !text) return;
+    const m = {
+      id: crypto.randomUUID(),
+      type: "chat",
+      kind: "text",
+      text,
+      from: me.username,
+      displayName: me.displayName,
+      ts: Date.now(),
+      replyTo: replyTo,
+      groupId: activeGroupId || null,
+    };
+    await persistAndShow(key, m);
+    let any = false;
+    for (const u of recipientsForChat()) {
+      if (
+        sendTo(u, {
+          type: "chat",
+          id: m.id,
+          text,
+          displayName: me.displayName,
+          ts: m.ts,
+          replyTo,
+          groupId: activeGroupId || null,
+        })
+      )
+        any = true;
+    }
+    if (!any && recipientsForChat().length) {
+      renderMessage({ type: "system", text: "Mesaj yerel kaydedildi; alıcılar çevrimdışı olabilir." });
+    }
+    replyTo = null;
+    el.chatInput.placeholder = "Mesaj yaz…";
+  }
+
+  async function sendGif(url) {
+    if (!activeFriend || !url) return;
+    const m = {
+      id: crypto.randomUUID(),
+      type: "chat",
+      kind: "gif",
+      url,
+      text: "",
+      from: me.username,
+      displayName: me.displayName,
+      ts: Date.now(),
+    };
+    await persistAndShow(activeFriend, m);
+    sendTo(activeFriend, { type: "gif", url, displayName: me.displayName, ts: m.ts });
+  }
+
+  // ---------- file P2P (base64 JSON chunks — güvenilir) ----------
+  function waitEvent(name, predicate, timeoutMs) {
+    return new Promise((resolve) => {
+      const t = setTimeout(() => {
+        window.removeEventListener(name, onEv);
+        resolve(null);
+      }, timeoutMs);
+      function onEv(ev) {
+        if (predicate(ev.detail)) {
+          clearTimeout(t);
+          window.removeEventListener(name, onEv);
+          resolve(ev.detail);
+        }
+      }
+      window.addEventListener(name, onEv);
+    });
+  }
+
+  async function sendFile(preselected) {
+    if (!activeFriend || sendFileBusy) return;
+    const conn = conns.get(activeFriend);
+    if (!conn || !conn.open) {
+      renderMessage({ type: "system", text: "Dosya için arkadaş çevrimiçi olmalı." });
+      return;
+    }
+    const file = preselected || (await api.pickFile());
+    if (!file) return;
+
+    sendFileBusy = true;
+    transferCancelled = false;
+    const id = crypto.randomUUID();
+    activeTransferId = id;
+    // 48KB chunk + kaydırmalı pencere → ~50 Mbit upload'a yaklaşır
+    const chunkSize = 48 * 1024;
+    const WINDOW = 16;
+
+    try {
+      const mKind = mediaKind(file.name);
+      sendTo(activeFriend, {
+        type: "file-start",
+        id,
+        name: file.name,
+        size: file.size,
+        mime: "application/octet-stream",
+        mediaKind: mKind,
+      });
+      showTransfer(`Gönderiliyor: ${file.name}`, 0, `0 / ${fmtSize(file.size)}`);
+      renderMessage({
+        type: "system",
+        text: `Gönderiliyor: ${file.name} (${fmtSize(file.size)})…`,
+      });
+
+      const ready = await waitEvent("file-ready", (m) => m && m.id === id, 30000);
+      if (!ready || transferCancelled) {
+        renderMessage({ type: "system", text: transferCancelled ? "Gönderim iptal." : "Alıcı hazır değil." });
+        hideTransfer();
+        return;
+      }
+
+      let offset = 0;
+      let acked = 0;
+      const onAck = (ev) => {
+        const m = ev.detail;
+        if (!m || m.id !== id) return;
+        acked = Math.max(acked, m.offset || 0);
+      };
+      window.addEventListener("file-ack", onAck);
+
+      while (offset < file.size) {
+        if (transferCancelled) throw new Error("İptal edildi");
+        // Kaydırmalı pencere: ACK geride kaldıysa bekle (upload'u boğmadan doldur)
+        while (offset - acked >= WINDOW * chunkSize) {
+          if (transferCancelled) throw new Error("İptal edildi");
+          await new Promise((r) => setTimeout(r, 4));
+        }
+        const length = Math.min(chunkSize, file.size - offset);
+        const chunk = await api.readFileChunk(file.path, offset, length);
+        if (!chunk || !chunk.b64) throw new Error("Dosya okunamadı");
+
+        const start = offset;
+        const ok = sendTo(activeFriend, {
+          type: "file-chunk",
+          id,
+          offset: start,
+          len: chunk.len,
+          b64: chunk.b64,
+        });
+        if (!ok) throw new Error("Bağlantı koptu");
+
+        offset += chunk.len;
+        showTransfer(
+          `Gönderiliyor: ${file.name}`,
+          (offset / file.size) * 100,
+          `${fmtSize(offset)} / ${fmtSize(file.size)}`
+        );
+        // event loop
+        if (offset % (chunkSize * 4) === 0) await new Promise((r) => setTimeout(r, 0));
+      }
+
+      const deadline = Date.now() + 30000;
+      while (acked < file.size && Date.now() < deadline && !transferCancelled) {
+        await new Promise((r) => setTimeout(r, 20));
+      }
+      window.removeEventListener("file-ack", onAck);
+
+      if (transferCancelled) throw new Error("İptal edildi");
+      sendTo(activeFriend, { type: "file-end", id });
+      showTransfer(`Gönderildi: ${file.name}`, 100, fmtSize(file.size));
+      setTimeout(hideTransfer, 2000);
+
+      let previewUrl = null;
+      if (mKind === "image" || mKind === "video") {
+        try {
+          const prev = await api.filePreview(file.path);
+          if (prev && prev.dataUrl) previewUrl = prev.dataUrl;
+        } catch {}
+      }
+      await persistAndShow(activeFriend, {
+        id: crypto.randomUUID(),
+        type: "chat",
+        kind: mKind === "image" || mKind === "video" ? mKind : "file",
+        name: file.name,
+        size: file.size,
+        localPath: file.path,
+        previewUrl,
+        from: me.username,
+        displayName: me.displayName,
+        ts: Date.now(),
+      });
+    } catch (e) {
+      console.error(e);
+      sendTo(activeFriend, { type: "file-abort", id });
+      hideTransfer();
+      renderMessage({ type: "system", text: "Dosya: " + (e.message || e) });
+    } finally {
+      sendFileBusy = false;
+      activeTransferId = null;
+      transferCancelled = false;
+    }
+  }
+
+  // ---------- calls / screen ----------
+  function startCallTimer() {
+    callStartedAt = Date.now();
+    clearInterval(callTimerIv);
+    callTimerIv = setInterval(() => {
+      const s = Math.floor((Date.now() - callStartedAt) / 1000);
+      el.callTimer.textContent =
+        String(Math.floor(s / 60)).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0");
+    }, 500);
+  }
+
+  function stopCallTimer() {
+    clearInterval(callTimerIv);
+    el.callTimer.textContent = "00:00";
+  }
+
+  function endCallUi() {
+    inCall = false;
+    callWith = null;
+    el.mediaDock.hidden = true;
+    el.remoteVideo.srcObject = null;
+    el.localVideo.srcObject = null;
+    el.remoteAudio.srcObject = null;
+    if (el.remoteScreenAudio) el.remoteScreenAudio.srcObject = null;
+    el.remotePh.hidden = false;
+    el.localPh.hidden = false;
+    stopCallTimer();
+    setScreenBtnUi();
+    exitFullscreenMedia();
+    updateCallButtons();
+    renderFriends();
+  }
+
+  function applyMediaLayout(mode) {
+    const m = mode || el.mediaLayout?.value || "both";
+    if (el.mediaVideos) {
+      el.mediaVideos.classList.remove("layout-remote", "layout-local", "layout-both");
+      if (m === "remote") el.mediaVideos.classList.add("layout-remote");
+      else if (m === "local") el.mediaVideos.classList.add("layout-local");
+    }
+    if (el.fsVideos) {
+      el.fsVideos.classList.remove("layout-remote", "layout-local");
+      if (m === "remote") el.fsVideos.classList.add("layout-remote");
+      else if (m === "local") el.fsVideos.classList.add("layout-local");
+    }
+    if (el.mediaLayout) el.mediaLayout.value = m;
+    if (el.fsLayout) el.fsLayout.value = m;
+  }
+
+  function enterFullscreenMedia() {
+    if (!el.fsMedia) return;
+    el.fsMedia.hidden = false;
+    // Aynı stream'leri tam ekran videolara bağla
+    el.fsRemote.srcObject = el.remoteVideo.srcObject;
+    el.fsLocal.srcObject = el.localVideo.srcObject;
+    applyMediaLayout(el.mediaLayout?.value || "both");
+    const req =
+      el.fsMedia.requestFullscreen ||
+      el.fsMedia.webkitRequestFullscreen ||
+      el.fsMedia.msRequestFullscreen;
+    if (req) {
+      try {
+        req.call(el.fsMedia);
+      } catch {}
+    }
+  }
+
+  function exitFullscreenMedia() {
+    if (!el.fsMedia) return;
+    el.fsMedia.hidden = true;
+    el.fsRemote.srcObject = null;
+    el.fsLocal.srcObject = null;
+    if (document.fullscreenElement) {
+      try {
+        document.exitFullscreen();
+      } catch {}
+    }
+  }
+
+  function hangup() {
+    // Giden zil sırasında kapat → cevapsız
+    if (outboundRing && !outboundRing.answered && !outboundRing.finished) {
+      finishOutboundAsMissed("cancel");
+      return;
+    }
+    const was = inCall || mediaCall || mediaCalls.size;
+    inCall = false;
+    stopRings();
+    clearTimeout(callRingTimer);
+    outboundRing = null;
+    el.mediaDock?.classList.remove("outgoing-ring-ui");
+    if (screenStream) {
+      screenStream.getTracks().forEach((t) => t.stop());
+      screenStream = null;
+    }
+    if (screenCall) {
+      try {
+        screenCall.close();
+      } catch {}
+      screenCall = null;
+    }
+    for (const [, c] of mediaCalls) {
+      try {
+        c.close();
+      } catch {}
+    }
+    mediaCalls.clear();
+    if (mediaCall) {
+      const c = mediaCall;
+      mediaCall = null;
+      try {
+        c.close();
+      } catch {}
+    }
+    if (incomingCall) {
+      try {
+        incomingCall.close();
+      } catch {}
+      incomingCall = null;
+    }
+    el.incomingBar.hidden = true;
+    if (was && callWith) sendTo(callWith, { type: "screen-stop" });
+    const friend = callWith;
+    endCallUi();
+    if (was && friend) setPresence(friend, conns.get(friend)?.open ? "online" : "offline");
+    if (was) renderMessage({ type: "system", text: "Görüşme sona erdi." });
+  }
+
+  function onMediaStream(stream, { isScreen = false } = {}) {
+    const audio = stream.getAudioTracks();
+    const video = stream.getVideoTracks();
+    if (audio.length) {
+      if (isScreen && el.remoteScreenAudio) {
+        // Sistem/oyun sesi — çağrı mikrofon sesinden AYRI element
+        el.remoteScreenAudio.srcObject = new MediaStream(audio);
+        el.remoteScreenAudio.play().catch(() => {});
+        applyScreenAudioVolume(settings.screenAudioVolume ?? 100);
+      } else {
+        el.remoteAudio.srcObject = new MediaStream(audio);
+        el.remoteAudio.play().catch(() => {});
+        applyVoiceVolume(settings.outputVolume ?? 100);
+      }
+    }
+    if (video.length) {
+      el.remoteVideo.srcObject = new MediaStream(video);
+      el.remotePh.hidden = true;
+      el.mediaDock.hidden = false;
+      if (el.fsRemote && !el.fsMedia.hidden) el.fsRemote.srcObject = el.remoteVideo.srcObject;
+    }
+  }
+
+  function bindMediaCall(call, friendUsername) {
+    mediaCall = call;
+    inCall = true;
+    callWith = friendUsername;
+    setPresence(friendUsername, "busy");
+    el.mediaDock.hidden = false;
+    startCallTimer();
+    updateCallButtons();
+    call.on("stream", (stream) => {
+      stopRings();
+      onMediaStream(stream, { isScreen: false });
+    });
+    call.on("close", () => {
+      if (mediaCall === call || inCall) hangup();
+    });
+    call.on("error", () => hangup());
+  }
+
+  async function appendMissedCall(targetKey, withUser, direction) {
+    const text =
+      direction === "out"
+        ? `📞 Cevapsız çağrı → @${withUser}`
+        : `📞 Cevapsız çağrı ← @${withUser}`;
+    const m = {
+      id: crypto.randomUUID(),
+      type: "missed-call",
+      kind: "missed-call",
+      text,
+      from: me.username,
+      ts: Date.now(),
+    };
+    await persistAndShow(targetKey, m);
+  }
+
+  /** Giden arama: 30 sn zil UI (offline olsa bile), sonra cevapsız */
+  let outboundRing = null; // { target, groupId, answered }
+
+  function showOutgoingRingUI(label) {
+    inCall = true;
+    el.mediaDock.hidden = false;
+    el.mediaDock.classList.add("outgoing-ring-ui");
+    if (el.remotePh) {
+      el.remotePh.hidden = false;
+      el.remotePh.textContent = label || "Aranıyor…";
+    }
+    if (el.localPh) el.localPh.hidden = false;
+    startCallTimer();
+    updateCallButtons();
+    playOutgoingRing();
+  }
+
+  async function finishOutboundAsMissed(reason) {
+    if (!outboundRing || outboundRing.finished) return;
+    outboundRing.finished = true;
+    const { target, groupId } = outboundRing;
+    const key = groupId || target;
+    clearTimeout(callRingTimer);
+    stopRings();
+    outboundRing = null;
+    // hangup UI without double-missed
+    inCall = false;
+    el.mediaDock.classList.remove("outgoing-ring-ui");
+    endCallUi();
+    await appendMissedCall(key, target, "out");
+    sendTo(target, {
+      type: "missed-call",
+      from: me.username,
+      displayName: me.displayName,
+      groupId: groupId || null,
+      ts: Date.now(),
+    });
+    if (chatKey() === key) {
+      renderMessage({
+        type: "system",
+        text: reason === "cancel" ? "Arama iptal — cevapsız çağrı." : "Cevap yok — cevapsız çağrı.",
+      });
+    }
+  }
+
+  async function startCall() {
+    if (activeGroupId) {
+      const g = groups.find((x) => x.id === activeGroupId);
+      if (g) return startGroupCall(g);
+    }
+    if (!activeFriend || inCall) return;
+    const target = activeFriend;
+    const st = presence.get(target) || "offline";
+    const reachable = st !== "offline" && conns.get(target)?.open;
+
+    // Her durumda önce arama ekranı (çevrimiçi hissi)
+    outboundRing = { target, groupId: null, answered: false, finished: false };
+    showOutgoingRingUI(`@${target} aranıyor…`);
+
+    clearTimeout(callRingTimer);
+    callRingTimer = setTimeout(() => {
+      if (outboundRing && !outboundRing.answered && !outboundRing.finished) {
+        finishOutboundAsMissed("timeout");
+      }
+    }, 30000);
+
+    if (!reachable) {
+      // Offline: sadece zil UI; 30 sn veya iptal → cevapsız
+      return;
+    }
+
+    try {
+      const stream = await ensureMicGraph();
+      const pid = await peerIdOf(target);
+      const call = peer.call(pid, stream, { metadata: { kind: "audio", from: me.username } });
+      if (!call) {
+        await finishOutboundAsMissed("fail");
+        return;
+      }
+      mediaCall = call;
+      callWith = target;
+      call.on("stream", (stream) => {
+        if (outboundRing) outboundRing.answered = true;
+        clearTimeout(callRingTimer);
+        stopRings();
+        el.mediaDock.classList.remove("outgoing-ring-ui");
+        bindMediaCall(call, target);
+        onMediaStream(stream, { isScreen: false });
+      });
+      call.on("close", () => {
+        if (outboundRing && !outboundRing.answered && !outboundRing.finished) {
+          finishOutboundAsMissed("close");
+        } else if (mediaCall === call || inCall) hangup();
+      });
+      call.on("error", () => {
+        if (outboundRing && !outboundRing.answered) finishOutboundAsMissed("error");
+      });
+    } catch (e) {
+      stopRings();
+      outboundRing = null;
+      endCallUi();
+      renderMessage({ type: "system", text: "Mikrofon izni gerekli." });
+    }
+  }
+
+  async function startGroupCall(g) {
+    if (!g || inCall) return;
+    activeGroupId = g.id;
+    activeFriend = null;
+    try {
+      const stream = await ensureMicGraph();
+      playOutgoingRing();
+      inCall = true;
+      el.mediaDock.hidden = false;
+      startCallTimer();
+      updateCallButtons();
+      if (el.callMembersLabel) el.callMembersLabel.textContent = g.members.join(", ");
+      let connected = 0;
+      for (const member of g.members) {
+        if (member === me.username) continue;
+        const st = presence.get(member) || "offline";
+        if (st === "offline" || !conns.get(member)?.open) {
+          await appendMissedCall(g.id, member, "out");
+          sendTo(member, {
+            type: "missed-call",
+            from: me.username,
+            groupId: g.id,
+            displayName: me.displayName,
+            ts: Date.now(),
+          });
+          continue;
+        }
+        try {
+          const pid = await peerIdOf(member);
+          const call = peer.call(pid, stream, {
+            metadata: { kind: "audio", from: me.username, groupId: g.id },
+          });
+          if (call) {
+            mediaCalls.set(member, call);
+            call.on("stream", (s) => {
+              connected++;
+              stopRings();
+              onMediaStream(s, { isScreen: false });
+            });
+            call.on("close", () => {
+              mediaCalls.delete(member);
+              if (!mediaCalls.size && !mediaCall) hangup();
+            });
+          }
+        } catch {}
+      }
+      if (!mediaCalls.size) {
+        stopRings();
+        hangup();
+        renderMessage({ type: "system", text: "Grupta çevrimiçi kimse yok." });
+      } else {
+        renderMessage({ type: "system", text: `Grup aranıyor (${mediaCalls.size} kişi)…` });
+      }
+    } catch {
+      stopRings();
+      renderMessage({ type: "system", text: "Mikrofon izni gerekli." });
+    }
+  }
+
+  async function createGroupFromSelection() {
+    const members = [...selectedFriends];
+    if (!members.length) return;
+    try {
+      const names = members
+        .map((u) => friends.find((f) => f.username === u)?.displayName || u)
+        .join(", ");
+      const g = await api.createGroup(me.id, names.slice(0, 40), members);
+      groups = await api.listGroups(me.id);
+      selectedFriends.clear();
+      renderFriends();
+      renderGroups();
+      await openGroup(g.id);
+      renderMessage({ type: "system", text: "Grup odası oluşturuldu. Ara ile herkese sesli çağrı açabilirsin." });
+    } catch (e) {
+      alert(e.message || String(e));
+    }
+  }
+
+  async function acceptCall() {
+    if (!incomingCall) return;
+    try {
+      stopRings();
+      const stream = await ensureMicGraph();
+      const friend = callWith;
+      incomingCall.answer(stream);
+      bindMediaCall(incomingCall, friend);
+      incomingCall = null;
+      el.incomingBar.hidden = true;
+      renderMessage({ type: "system", text: "Arama açıldı." });
+    } catch {
+      rejectCall();
+    }
+  }
+
+  function rejectCall() {
+    stopRings();
+    if (incomingCall) {
+      try {
+        incomingCall.close();
+      } catch {}
+      incomingCall = null;
+    }
+    el.incomingBar.hidden = true;
+    callWith = null;
+  }
+
+  function qualityConstraints(q, fps) {
+    const f = Number(fps) || 30;
+    if (q === "720p") {
+      return {
+        width: { ideal: 1280, max: 1280 },
+        height: { ideal: 720, max: 720 },
+        frameRate: { ideal: f, max: f },
+      };
+    }
+    if (q === "lossless") {
+      return {
+        width: { ideal: 1920, max: 2560 },
+        height: { ideal: 1080, max: 1440 },
+        frameRate: { ideal: f, max: f },
+      };
+    }
+    return {
+      width: { ideal: 1920, max: 1920 },
+      height: { ideal: 1080, max: 1080 },
+      frameRate: { ideal: f, max: f },
+    };
+  }
+
+  function maxBitrateForQuality(q) {
+    if (q === "720p") return 2_500_000;
+    if (q === "lossless") return 8_000_000;
+    return 4_500_000;
+  }
+
+  async function optimizeScreenSender(call, quality, fps) {
+    try {
+      const pc = call.peerConnection || call._pc || call.pc;
+      if (!pc) return;
+      const sender = pc.getSenders().find((s) => s.track && s.track.kind === "video");
+      if (!sender) return;
+      const params = sender.getParameters();
+      if (!params.encodings || !params.encodings.length) {
+        params.encodings = [{}];
+      }
+      params.encodings[0].maxBitrate = maxBitrateForQuality(quality);
+      params.encodings[0].maxFramerate = Number(fps) || 30;
+      // oyun: hareket önceliği
+      if (sender.track) {
+        try {
+          sender.track.contentHint = "motion";
+        } catch {}
+      }
+      await sender.setParameters(params);
+    } catch (e) {
+      console.warn("bitrate ayarı:", e);
+    }
+  }
+
+  async function startScreenShare() {
+    if (!inCall || !callWith) return;
+    if (screenStream) {
+      stopScreen();
+      return;
+    }
+    const sources = await api.pickScreenSources();
+    el.screenList.innerHTML = "";
+    sources.forEach((s) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "screen-item";
+      b.innerHTML = `<img alt=""/><span></span>`;
+      b.querySelector("img").src = s.thumbnail;
+      b.querySelector("span").textContent = s.name;
+      b.addEventListener("click", async () => {
+        el.modalScreen.hidden = true;
+        try {
+          await api.setScreenSource(s.id);
+          const q = el.screenQuality.value;
+          const fps = Number(el.screenFps.value) || 30;
+          const showCursor = !!(el.screenCursor && el.screenCursor.checked);
+          const video = qualityConstraints(q, fps);
+
+          const wantSysAudio = !!(el.screenSystemAudio && el.screenSystemAudio.checked);
+          // Electron: video:true / audio:bool — karmaşık constraint ile ses capture kırılıyor
+          try {
+            screenStream = await navigator.mediaDevices.getDisplayMedia({
+              video: true,
+              audio: wantSysAudio,
+            });
+          } catch (err1) {
+            if (wantSysAudio) {
+              console.warn("Sesli ekran başarısız, sadece video:", err1);
+              screenStream = await navigator.mediaDevices.getDisplayMedia({
+                video: true,
+                audio: false,
+              });
+              renderMessage({
+                type: "system",
+                text: "Sistem sesi alınamadı; ekran görüntüsü paylaşılıyor.",
+              });
+            } else {
+              throw err1;
+            }
+          }
+
+          const track = screenStream.getVideoTracks()[0];
+          try {
+            track.contentHint = "motion";
+            await track.applyConstraints({
+              ...video,
+              frameRate: { ideal: fps, max: fps },
+            });
+          } catch {}
+          try {
+            if (!showCursor && track.getSettings) {
+              /* cursor never — destek yoksa yoksay */
+            }
+          } catch {}
+          screenStream.getAudioTracks().forEach((t) => {
+            try {
+              t.contentHint = "music";
+            } catch {}
+          });
+
+          const pid = await peerIdOf(callWith);
+          screenCall = peer.call(pid, screenStream, {
+            metadata: { kind: "screen", from: me.username },
+          });
+          setTimeout(() => optimizeScreenSender(screenCall, q, fps), 400);
+
+          el.localVideo.srcObject = new MediaStream(screenStream.getVideoTracks());
+          el.localPh.hidden = true;
+          if (el.fsLocal && !el.fsMedia.hidden) el.fsLocal.srcObject = el.localVideo.srcObject;
+          setScreenBtnUi();
+          track.onended = () => stopScreen();
+          const hasAudio = screenStream.getAudioTracks().length > 0;
+          renderMessage({
+            type: "system",
+            text: hasAudio
+              ? "Ekran + sistem sesi paylaşılıyor."
+              : "Ekran paylaşılıyor.",
+          });
+        } catch (err) {
+          renderMessage({ type: "system", text: "Ekran paylaşılamadı: " + (err.message || err) });
+          console.error(err);
+        }
+      });
+      el.screenList.appendChild(b);
+    });
+    el.modalScreen.hidden = false;
+  }
+
+  function stopScreen() {
+    if (screenStream) {
+      screenStream.getTracks().forEach((t) => t.stop());
+      screenStream = null;
+    }
+    if (screenCall) {
+      try {
+        screenCall.close();
+      } catch {}
+      screenCall = null;
+    }
+    el.localVideo.srcObject = null;
+    el.localPh.hidden = false;
+    setScreenBtnUi();
+    if (callWith) sendTo(callWith, { type: "screen-stop" });
+  }
+
+  // ---------- emoji / gif ----------
+  function buildEmojiPanel() {
+    el.emojiPanel.innerHTML = "";
+    const grid = document.createElement("div");
+    grid.className = "emoji-grid";
+    for (const e of EMOJIS) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.textContent = e;
+      b.addEventListener("click", () => {
+        el.chatInput.value += e;
+        el.chatInput.focus();
+      });
+      grid.appendChild(b);
+    }
+    el.emojiPanel.appendChild(grid);
+  }
+
+  function paintGifResults(items) {
+    el.gifResults.innerHTML = "";
+    for (const it of items) {
+      if (!it.thumb) continue;
+      const b = document.createElement("button");
+      b.type = "button";
+      b.innerHTML = `<img src="${it.thumb}" alt="gif" />`;
+      b.addEventListener("click", () => {
+        sendGif(it.full || it.thumb);
+        el.gifPanel.hidden = true;
+      });
+      el.gifResults.appendChild(b);
+    }
+    if (!el.gifResults.children.length) {
+      el.gifResults.innerHTML = "<p class='hint tiny'>Sonuç yok.</p>";
+    }
+  }
+
+  async function searchGifs(q) {
+    el.gifResults.innerHTML = "<p class='hint tiny'>Aranıyor…</p>";
+    const query = (q || "reaction").trim() || "reaction";
+
+    // 1) Tenor = Google'ın resmi GIF API'si (uygulama içi, tarayıcı yok)
+    try {
+      const url =
+        `https://tenor.googleapis.com/v2/search?q=${encodeURIComponent(query)}` +
+        `&key=${TENOR_KEY}&client_key=ikili_sohbet&limit=24&media_filter=gif,tinygif`;
+      const res = await fetch(url);
+      if (res.ok) {
+        const data = await res.json();
+        const items = (data.results || []).map((r) => ({
+          thumb: r.media_formats?.tinygif?.url || r.media_formats?.nanogif?.url || r.media_formats?.gif?.url,
+          full: r.media_formats?.gif?.url || r.media_formats?.mediumgif?.url,
+        }));
+        if (items.length) {
+          paintGifResults(items);
+          return;
+        }
+      }
+    } catch (e) {
+      console.warn("Tenor:", e);
+    }
+
+    // 2) Giphy yedek
+    try {
+      const url = `https://api.giphy.com/v1/gifs/search?api_key=${GIPHY_KEY}&q=${encodeURIComponent(query)}&limit=24&rating=pg-13`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      const data = await res.json();
+      const items = (data.data || []).map((g) => ({
+        thumb: g.images?.fixed_height_small?.url || g.images?.preview_gif?.url,
+        full: g.images?.original?.url,
+      }));
+      paintGifResults(items);
+    } catch {
+      el.gifResults.innerHTML =
+        "<p class='hint tiny'>GIF servisi yanıt vermiyor. İnterneti kontrol et; gerekirse ücretsiz Tenor/Giphy API key al.</p>";
+    }
+  }
+
+  // ---------- boot session ----------
+  let cloudMode = false;
+  let stopCloudPresence = null;
+
+  function setCloudBadge() {
+    const b = $("cloud-mode-badge");
+    if (!b) return;
+    b.textContent = cloudMode
+      ? "Bulut modu (Supabase) · ses/ekran hâlâ P2P"
+      : "Yerel mod · bulut: CLOUD.md";
+  }
+
+  async function loadFriendsUnified() {
+    if (cloudMode && window.HearthCloud?.isEnabled()) {
+      try {
+        const cloudFriends = await window.HearthCloud.listFriends();
+        // Yerel sohbet geçmişi için de local friends kaydı tut
+        for (const f of cloudFriends) {
+          try {
+            await api.addFriend(me.id, f.username, f.displayName);
+          } catch {
+            /* zaten var */
+          }
+        }
+        friends = cloudFriends;
+        // Presence haritasını uygula
+        const onlineMap = window.HearthCloud.getOnlineMap();
+        for (const f of friends) {
+          const meta = onlineMap.get(f.username);
+          if (meta && meta.online && f.remoteStatus !== "invisible") {
+            presence.set(f.username, meta.status === "dnd" || meta.status === "idle" ? "online" : "online");
+          }
+        }
+        return;
+      } catch (e) {
+        console.warn("cloud friends", e);
+      }
+    }
+    friends = await api.listFriends(me.id);
+  }
+
+  async function enterApp(user) {
+    me = user;
+    // Yerel ayarlar: cloud uuid veya local id
+    settings = await api.getSettings(me.id);
+    await loadFriendsUnified();
+    el.myDisplay.textContent = me.displayName || me.username;
+    el.myUsername.textContent = "@" + me.username;
+    try {
+      setMyAvatar(await api.getAvatar(me.id));
+    } catch {
+      setMyAvatar(null);
+    }
+    noiseOn = settings.noiseSuppression !== false;
+    friendsOnlineCollapsed = !!settings.friendsOnlineCollapsed;
+    friendsOfflineCollapsed = !!settings.friendsOfflineCollapsed;
+    applyMicVolume(settings.micVolume ?? 100);
+    applyVoiceVolume(settings.outputVolume ?? 100);
+    applyScreenAudioVolume(settings.screenAudioVolume ?? 100);
+    if (el.screenQuality) el.screenQuality.value = settings.screenQuality || "1080p";
+    if (el.screenFps) el.screenFps.value = String(settings.screenFps || 30);
+    if (el.screenCursor) el.screenCursor.checked = !!settings.showCursor;
+    if (el.screenSystemAudio) el.screenSystemAudio.checked = settings.captureSystemAudio !== false;
+    setMediaHeight(settings.mediaDockHeight || 220);
+    setChatExpanded(!!settings.chatExpanded);
+    if (el.setHotkey) {
+      el.setHotkey.value = accelToLabel(settings.micHotkey || "CommandOrControl+Shift+M");
+      el.setHotkey.dataset.accel = settings.micHotkey || "CommandOrControl+Shift+M";
+    }
+    if (el.setDeafenHotkey) {
+      el.setDeafenHotkey.value = accelToLabel(settings.deafenHotkey || "CommandOrControl+Shift+D");
+      el.setDeafenHotkey.dataset.accel = settings.deafenHotkey || "CommandOrControl+Shift+D";
+    }
+    if (el.myStatusSelect) el.myStatusSelect.value = me.status || "online";
+    if (el.myStatusText) el.myStatusText.value = me.statusText || "";
+    setMicUi();
+    setDeafenUi();
+    setNoiseUi();
+    setScreenBtnUi();
+    updateMyStatusDot();
+    rebuildSounds();
+    try {
+      groups = await api.listGroups(me.id);
+    } catch {
+      groups = [];
+    }
+    showApp();
+    renderFriends();
+    renderGroups();
+    buildEmojiPanel();
+    if (window.Notification && Notification.permission === "default") {
+      try {
+        Notification.requestPermission();
+      } catch {}
+    }
+    await startPeerNetwork();
+
+    // Bulut presence (P2P medyadan bağımsız)
+    if (cloudMode && window.HearthCloud?.isEnabled()) {
+      try {
+        if (stopCloudPresence) await stopCloudPresence();
+        stopCloudPresence = await window.HearthCloud.startPresence({
+          username: me.username,
+          status: me.status || "online",
+          statusText: me.statusText || "",
+          onChange: (map) => {
+            for (const f of friends) {
+              const meta = map.get(f.username);
+              if (meta && meta.online) {
+                // invisible dışındakiler online sayılır (görünürlük)
+                if (meta.status === "invisible") presence.set(f.username, "offline");
+                else presence.set(f.username, "online");
+                f.remoteStatus = meta.status;
+                f.statusText = meta.statusText || "";
+              }
+            }
+            renderFriends();
+          },
+        });
+      } catch (e) {
+        console.warn("cloud presence", e);
+      }
+    }
+
+    if (!settings.onboardingDone && el.onboarding) {
+      el.onboarding.hidden = false;
+    }
+  }
+
+  // ---------- events: auth ----------
+  document.querySelectorAll(".tab").forEach((tab) => {
+    tab.addEventListener("click", () => {
+      document.querySelectorAll(".tab").forEach((t) => t.classList.remove("active"));
+      tab.classList.add("active");
+      const which = tab.dataset.tab;
+      el.formLogin.hidden = which !== "login";
+      el.formRegister.hidden = which !== "register";
+    });
+  });
+
+  el.formLogin.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    el.loginError.hidden = true;
+    try {
+      let user;
+      if (cloudMode && window.HearthCloud?.isEnabled()) {
+        user = await window.HearthCloud.login({
+          email: el.loginEmail.value.trim(),
+          password: el.loginPass.value,
+        });
+      } else {
+        user = await api.login({
+          email: el.loginEmail.value.trim(),
+          password: el.loginPass.value,
+        });
+      }
+      await enterApp(user);
+    } catch (err) {
+      el.loginError.hidden = false;
+      el.loginError.textContent = err.message || String(err);
+    }
+  });
+
+  el.formRegister.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    el.regError.hidden = true;
+    try {
+      const payload = {
+        email: el.regEmail.value.trim(),
+        username: el.regUsername.value.trim(),
+        displayName: el.regDisplay.value.trim() || el.regUsername.value.trim(),
+        password: el.regPass.value,
+      };
+      if (cloudMode && window.HearthCloud?.isEnabled()) {
+        const res = await window.HearthCloud.register(payload);
+        if (res.needsConfirm) {
+          el.regError.hidden = false;
+          el.regError.textContent =
+            "Kayıt alındı. E-posta onayı açıksa gelen kutunu kontrol et, sonra giriş yap.";
+          return;
+        }
+        await enterApp(res.user);
+      } else {
+        const user = await api.register(payload);
+        await enterApp(user);
+      }
+    } catch (err) {
+      el.regError.hidden = false;
+      el.regError.textContent = err.message || String(err);
+    }
+  });
+
+  // ---------- friends / chat ----------
+  el.btnAddFriend.addEventListener("click", () => {
+    el.addFriendError.hidden = true;
+    el.addFriendUser.value = "";
+    el.modalAdd.hidden = false;
+  });
+
+  el.btnAddFriendGo.addEventListener("click", async () => {
+    el.addFriendError.hidden = true;
+    try {
+      const uname = el.addFriendUser.value.trim();
+      if (cloudMode && window.HearthCloud?.isEnabled()) {
+        await window.HearthCloud.addFriendByUsername(uname);
+        await api.addFriend(me.id, uname).catch(() => {});
+      } else {
+        await api.addFriend(me.id, uname);
+      }
+      await loadFriendsUnified();
+      renderFriends();
+      el.modalAdd.hidden = true;
+      tryConnect(uname.toLowerCase());
+    } catch (err) {
+      el.addFriendError.hidden = false;
+      el.addFriendError.textContent = err.message || String(err);
+    }
+  });
+
+  el.chatForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const text = el.chatInput.value.trim();
+    if (!text) return;
+    el.chatInput.value = "";
+    await sendChatText(text);
+  });
+
+  el.btnEmoji.addEventListener("click", () => {
+    el.gifPanel.hidden = true;
+    el.emojiPanel.hidden = !el.emojiPanel.hidden;
+  });
+
+  el.btnGif.addEventListener("click", () => {
+    el.emojiPanel.hidden = true;
+    el.gifPanel.hidden = !el.gifPanel.hidden;
+    if (!el.gifPanel.hidden) searchGifs(el.gifSearch.value || "reaction");
+  });
+
+  let gifTimer = null;
+  el.gifSearch.addEventListener("input", () => {
+    clearTimeout(gifTimer);
+    gifTimer = setTimeout(() => searchGifs(el.gifSearch.value), 400);
+  });
+
+  el.btnFile.addEventListener("click", () => sendFile());
+
+  // ---------- call controls ----------
+  el.btnCall.addEventListener("click", () => startCall());
+  el.btnHangup.addEventListener("click", () => hangup());
+  el.btnAccept.addEventListener("click", () => acceptCall());
+  el.btnReject.addEventListener("click", () => rejectCall());
+  el.btnMic.addEventListener("click", () => toggleMic());
+  el.btnDeafen.addEventListener("click", () => toggleDeafen());
+  if (el.btnNoise) el.btnNoise.addEventListener("click", () => toggleNoise());
+  el.btnScreen.addEventListener("click", () => startScreenShare());
+  if (el.btnCancelTransfer) {
+    el.btnCancelTransfer.addEventListener("click", () => cancelTransfer("user"));
+  }
+  if (el.btnGroupFromSelection) {
+    el.btnGroupFromSelection.addEventListener("click", () => createGroupFromSelection());
+  }
+  if (el.btnNewGroup) {
+    el.btnNewGroup.addEventListener("click", () => createGroupFromSelection());
+  }
+  if (el.btnOnboardDone) {
+    el.btnOnboardDone.addEventListener("click", async () => {
+      if (el.onboarding) el.onboarding.hidden = true;
+      if (me) {
+        settings = await api.saveSettings(me.id, { onboardingDone: true });
+      }
+    });
+  }
+  document.addEventListener("click", () => hideMsgContext());
+  if (el.msgContextMenu) {
+    el.msgContextMenu.addEventListener("click", (e) => e.stopPropagation());
+    el.msgContextMenu.querySelectorAll("[data-act]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const act = btn.getAttribute("data-act");
+        const m = ctxTargetMessage;
+        hideMsgContext();
+        if (!m) return;
+        if (act === "reply") {
+          replyTo = { id: m.id, text: m.text || m.name || "…", from: m.from };
+          el.chatInput.placeholder = `Yanıt: ${replyTo.text.slice(0, 40)}…`;
+          el.chatInput.focus();
+        } else if (act === "react-thumb") await reactToMessage(m.id, "👍");
+        else if (act === "react-heart") await reactToMessage(m.id, "❤️");
+        else if (act === "pin") await pinMessage(m);
+        else if (act === "edit") await editMessage(m);
+        else if (act === "delete") await deleteMessage(m);
+      });
+    });
+  }
+  if (el.chatSearch) {
+    el.chatSearch.addEventListener("input", () => {
+      const q = el.chatSearch.value.trim().toLowerCase();
+      let hits = 0;
+      el.chatLog.querySelectorAll(".msg").forEach((node) => {
+        node.classList.remove("search-hit");
+        if (!q) return;
+        const t = (node.textContent || "").toLowerCase();
+        if (t.includes(q) && !node.classList.contains("system")) {
+          node.classList.add("search-hit");
+          hits++;
+        }
+      });
+      if (el.chatSearchCount) {
+        el.chatSearchCount.textContent = q ? `${hits} sonuç` : "";
+      }
+      const first = el.chatLog.querySelector(".msg.search-hit");
+      if (first) first.scrollIntoView({ block: "center", behavior: "smooth" });
+    });
+  }
+  if (el.btnFullscreenMedia) {
+    el.btnFullscreenMedia.addEventListener("click", () => enterFullscreenMedia());
+  }
+  if (el.btnFsExit) el.btnFsExit.addEventListener("click", () => exitFullscreenMedia());
+  if (el.mediaLayout) {
+    el.mediaLayout.addEventListener("change", () => applyMediaLayout(el.mediaLayout.value));
+  }
+  if (el.fsLayout) {
+    el.fsLayout.addEventListener("change", () => applyMediaLayout(el.fsLayout.value));
+  }
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") exitFullscreenMedia();
+  });
+
+  async function broadcastPresence() {
+    if (!me) return;
+    for (const f of friends) {
+      sendTo(f.username, {
+        type: "presence",
+        status: me.status || "online",
+        statusText: me.statusText || "",
+      });
+    }
+  }
+
+  if (el.myStatusSelect) {
+    el.myStatusSelect.addEventListener("change", async () => {
+      const status = el.myStatusSelect.value;
+      if (cloudMode && window.HearthCloud?.isEnabled()) {
+        me = await window.HearthCloud.updateProfile({ status });
+        await window.HearthCloud.trackPresenceUpdate({
+          status,
+          statusText: me.statusText || "",
+        });
+      } else {
+        me = await api.updateProfile(me.id, { status });
+      }
+      updateMyStatusDot();
+      await broadcastPresence();
+    });
+  }
+  if (el.myStatusText) {
+    let t;
+    el.myStatusText.addEventListener("input", () => {
+      clearTimeout(t);
+      t = setTimeout(async () => {
+        const statusText = el.myStatusText.value.trim();
+        if (cloudMode && window.HearthCloud?.isEnabled()) {
+          me = await window.HearthCloud.updateProfile({ statusText });
+          await window.HearthCloud.trackPresenceUpdate({
+            status: me.status || "online",
+            statusText,
+          });
+        } else {
+          me = await api.updateProfile(me.id, { statusText });
+        }
+        updateMyStatusDot();
+        await broadcastPresence();
+      }, 400);
+    });
+  }
+
+  // Sürükle-bırak dosya
+  if (el.chatShell) {
+    el.chatShell.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      el.chatShell.classList.add("drag-over");
+    });
+    el.chatShell.addEventListener("dragleave", () => el.chatShell.classList.remove("drag-over"));
+    el.chatShell.addEventListener("drop", async (e) => {
+      e.preventDefault();
+      el.chatShell.classList.remove("drag-over");
+      const f = e.dataTransfer?.files?.[0];
+      if (!f || !activeFriend) return;
+      // Electron: path özelliği
+      const p = f.path;
+      if (!p) {
+        renderMessage({ type: "system", text: "Bu dosya yolu okunamadı; 📎 ile seç." });
+        return;
+      }
+      await sendFile({ path: p, name: f.name, size: f.size });
+    });
+  }
+
+  if (el.mediaHeight) {
+    el.mediaHeight.addEventListener("input", async () => {
+      setMediaHeight(el.mediaHeight.value);
+      settings.mediaDockHeight = Number(el.mediaHeight.value);
+      await api.saveSettings(me.id, { mediaDockHeight: settings.mediaDockHeight });
+    });
+  }
+
+  el.micVol.addEventListener("input", async () => {
+    if (deafened) return;
+    applyMicVolume(el.micVol.value);
+    settings.micVolume = Number(el.micVol.value);
+    await api.saveSettings(me.id, { micVolume: settings.micVolume });
+  });
+
+  el.outVol.addEventListener("input", async () => {
+    if (deafened) {
+      preDeafenOutput = Number(el.outVol.value);
+      return;
+    }
+    applyVoiceVolume(el.outVol.value);
+    settings.outputVolume = Number(el.outVol.value);
+    await api.saveSettings(me.id, { outputVolume: settings.outputVolume });
+  });
+
+  if (el.screenAudioVol) {
+    el.screenAudioVol.addEventListener("input", async () => {
+      if (deafened) {
+        preDeafenScreenVol = Number(el.screenAudioVol.value);
+        return;
+      }
+      applyScreenAudioVolume(el.screenAudioVol.value);
+      settings.screenAudioVolume = Number(el.screenAudioVol.value);
+      await api.saveSettings(me.id, { screenAudioVolume: settings.screenAudioVolume });
+    });
+  }
+
+  el.screenQuality.addEventListener("change", async () => {
+    await api.saveSettings(me.id, { screenQuality: el.screenQuality.value });
+  });
+  el.screenFps.addEventListener("change", async () => {
+    await api.saveSettings(me.id, { screenFps: Number(el.screenFps.value) });
+  });
+  if (el.screenCursor) {
+    el.screenCursor.addEventListener("change", async () => {
+      await api.saveSettings(me.id, { showCursor: el.screenCursor.checked });
+    });
+  }
+
+  // ---------- settings (sekmeli) ----------
+  function switchSettingsTab(tab) {
+    document.querySelectorAll(".settings-nav-btn").forEach((b) => {
+      b.classList.toggle("active", b.getAttribute("data-settings-tab") === tab);
+    });
+    document.querySelectorAll("[data-settings-panel]").forEach((p) => {
+      const on = p.getAttribute("data-settings-panel") === tab;
+      p.hidden = !on;
+      p.classList.toggle("active", on);
+    });
+  }
+
+  document.querySelectorAll(".settings-nav-btn").forEach((b) => {
+    b.addEventListener("click", () => switchSettingsTab(b.getAttribute("data-settings-tab")));
+  });
+
+  el.btnOpenSettings.addEventListener("click", async () => {
+    if (el.setUsername) el.setUsername.value = me.username;
+    if (el.setEmail) el.setEmail.value = me.email;
+    el.setHotkey.value = accelToLabel(settings.micHotkey);
+    el.setHotkey.dataset.accel = settings.micHotkey || "";
+    if (el.setDeafenHotkey) {
+      el.setDeafenHotkey.value = accelToLabel(settings.deafenHotkey);
+      el.setDeafenHotkey.dataset.accel = settings.deafenHotkey || "";
+    }
+    if (el.setMicVol) {
+      el.setMicVol.value = String(settings.micVolume ?? 100);
+      if (el.setMicVolVal) el.setMicVolVal.textContent = (settings.micVolume ?? 100) + "%";
+    }
+    fillSoundSelect(el.setSoundIncoming, settings.soundIncoming || "fart_3.mp3");
+    fillSoundSelect(el.setSoundOutgoing, settings.soundOutgoing || "ring_outgoing.mp3");
+    fillSoundSelect(el.setSoundNotify, settings.soundNotify || "notify.mp3");
+    if (el.setSoundRingEnabled) el.setSoundRingEnabled.checked = settings.soundRingEnabled !== false;
+    if (el.setSoundNotifyEnabled) el.setSoundNotifyEnabled.checked = settings.soundNotifyEnabled !== false;
+    if (el.setSoundVol) {
+      el.setSoundVol.value = String(settings.soundMasterVolume ?? 100);
+      if (el.setSoundVolVal) el.setSoundVolVal.textContent = (settings.soundMasterVolume ?? 100) + "%";
+    }
+    const dn = $("set-desktop-notify");
+    if (dn) dn.checked = settings.desktopNotify !== false;
+    if (el.appVersionLabel && api.appVersion) {
+      api.appVersion().then((v) => {
+        if (el.appVersionLabel) el.appVersionLabel.textContent = "Sürüm: v" + v;
+      }).catch(() => {});
+    }
+    if (el.updateStatusLabel && api.getUpdateStatus) {
+      api.getUpdateStatus().then((s) => {
+        if (el.updateStatusLabel && s?.message) el.updateStatusLabel.textContent = s.message;
+      }).catch(() => {});
+    }
+    switchSettingsTab("sound");
+    el.modalSettings.hidden = false;
+  });
+
+  if (el.btnCheckUpdates && api.checkForUpdates) {
+    el.btnCheckUpdates.addEventListener("click", async () => {
+      if (el.updateStatusLabel) el.updateStatusLabel.textContent = "Kontrol ediliyor…";
+      try {
+        const s = await api.checkForUpdates({ silent: false });
+        if (el.updateStatusLabel && s?.message) el.updateStatusLabel.textContent = s.message;
+      } catch (err) {
+        if (el.updateStatusLabel) el.updateStatusLabel.textContent = err.message || String(err);
+      }
+    });
+  }
+  if (api.onUpdateStatus) {
+    api.onUpdateStatus((s) => {
+      if (el.updateStatusLabel && s?.message) el.updateStatusLabel.textContent = s.message;
+    });
+  }
+
+  if (el.setSoundVol) {
+    el.setSoundVol.addEventListener("input", () => {
+      if (el.setSoundVolVal) el.setSoundVolVal.textContent = el.setSoundVol.value + "%";
+    });
+  }
+  if (el.btnPreviewIncoming) {
+    el.btnPreviewIncoming.addEventListener("click", () => {
+      previewSound(el.setSoundIncoming?.value || "fart_3.mp3", true);
+    });
+  }
+  if (el.btnPreviewOutgoing) {
+    el.btnPreviewOutgoing.addEventListener("click", () => {
+      previewSound(el.setSoundOutgoing?.value || "ring_outgoing.mp3", true);
+    });
+  }
+  if (el.btnPreviewNotify) {
+    el.btnPreviewNotify.addEventListener("click", () => {
+      previewSound(el.setSoundNotify?.value || "notify.mp3", false);
+    });
+  }
+
+  el.btnMyAvatar.addEventListener("click", () => openProfile(me.username, true));
+  // Tüm rail-me tıklanınca profil (sadece ayarlar dişlisi hariç)
+  document.querySelector(".rail-me")?.addEventListener("click", (e) => {
+    if (e.target.closest("#btn-open-settings")) return;
+    if (e.target.closest("#btn-my-avatar") || e.target.closest(".me-meta")) {
+      openProfile(me.username, true);
+    }
+  });
+
+  if (el.btnMediaAccept) el.btnMediaAccept.addEventListener("click", () => closeMediaOffer(true));
+  if (el.btnMediaReject) el.btnMediaReject.addEventListener("click", () => closeMediaOffer(false));
+
+  const btnProfileSave = $("btn-profile-save");
+  if (btnProfileSave) {
+    btnProfileSave.addEventListener("click", async () => {
+      const displayName = ($("profile-edit-display")?.value || "").trim() || me.username;
+      me = await api.updateProfile(me.id, {
+        displayName,
+        about: ($("profile-edit-about")?.value || "").trim(),
+        socials: {
+          twitter: ($("profile-edit-twitter")?.value || "").trim(),
+          youtube: ($("profile-edit-youtube")?.value || "").trim(),
+          instagram: ($("profile-edit-instagram")?.value || "").trim(),
+          website: ($("profile-edit-web")?.value || "").trim(),
+        },
+      });
+      el.myDisplay.textContent = me.displayName;
+      el.profileDisplay.textContent = me.displayName;
+      el.modalProfile.hidden = true;
+    });
+  }
+
+  el.btnChangeAvatar?.addEventListener("click", async () => {
+    const url = await api.pickAvatar(me.id);
+    if (url) {
+      setMyAvatar(url);
+      // profil modalındaki avatarı yenile
+      if (!el.modalProfile.hidden) openProfile(me.username, true);
+    }
+  });
+
+  // Avatar: sadece scale + mouse sürükle
+  let avatarDrag = null;
+  function refreshAvatarEditorPreview() {
+    const x = Number(el.avX?.value || 50);
+    const y = Number(el.avY?.value || 50);
+    const s = Number(el.avS?.value || 100) / 100;
+    if (el.avSVal) el.avSVal.textContent = Math.round(s * 100) + "%";
+    applyAvatarFrame(el.avatarEditImg, { x, y, scale: s }, { editor: true });
+  }
+
+  async function openAvatarFrameEditor() {
+    const url = await api.getAvatar(me.id);
+    if (!url) {
+      await api.showMessage({
+        title: "Profil",
+        message: "Önce bir profil resmi veya GIF seç.",
+      });
+      return;
+    }
+    el.avatarEditImg.src = url;
+    const f = settings.avatarFrame || { x: 50, y: 50, scale: 1 };
+    if (el.avX) el.avX.value = String(f.x ?? 50);
+    if (el.avY) el.avY.value = String(f.y ?? 50);
+    if (el.avS) el.avS.value = String(Math.round((f.scale || 1) * 100));
+    refreshAvatarEditorPreview();
+    el.modalAvatar.hidden = false;
+  }
+
+  if (el.avatarFramePreview && el.avatarEditImg) {
+    el.avatarFramePreview.addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+      avatarDrag = {
+        x0: e.clientX,
+        y0: e.clientY,
+        ox: Number(el.avX.value || 50),
+        oy: Number(el.avY.value || 50),
+      };
+      el.avatarFramePreview.classList.add("dragging");
+      el.avatarFramePreview.setPointerCapture?.(e.pointerId);
+    });
+    el.avatarFramePreview.addEventListener("pointermove", (e) => {
+      if (!avatarDrag) return;
+      const dx = e.clientX - avatarDrag.x0;
+      const dy = e.clientY - avatarDrag.y0;
+      // daire içinde kaydır
+      const nx = Math.max(0, Math.min(100, avatarDrag.ox - dx * 0.35));
+      const ny = Math.max(0, Math.min(100, avatarDrag.oy - dy * 0.35));
+      el.avX.value = String(Math.round(nx));
+      el.avY.value = String(Math.round(ny));
+      refreshAvatarEditorPreview();
+    });
+    const endDrag = (e) => {
+      if (!avatarDrag) return;
+      avatarDrag = null;
+      el.avatarFramePreview.classList.remove("dragging");
+      try {
+        el.avatarFramePreview.releasePointerCapture?.(e.pointerId);
+      } catch {}
+    };
+    el.avatarFramePreview.addEventListener("pointerup", endDrag);
+    el.avatarFramePreview.addEventListener("pointercancel", endDrag);
+  }
+
+  if (el.btnFrameAvatar) {
+    el.btnFrameAvatar.addEventListener("click", () => openAvatarFrameEditor());
+  }
+  ["avX", "avY", "avS"].forEach((k) => {
+    if (el[k]) el[k].addEventListener("input", refreshAvatarEditorPreview);
+  });
+
+  if (el.btnAvatarSave) {
+    el.btnAvatarSave.addEventListener("click", async () => {
+      const frame = {
+        x: Number(el.avX.value),
+        y: Number(el.avY.value),
+        scale: Number(el.avS.value) / 100,
+      };
+      settings = await api.saveSettings(me.id, { avatarFrame: frame });
+      applyAvatarFrame(el.myAvatarImg, frame);
+      // Statik görseller için kırpılmış kare de üret (GIF ise sadece konum)
+      try {
+        const src = el.avatarEditImg.src || "";
+        if (src && !src.includes("image/gif")) {
+          const dataUrl = await cropAvatarToDataUrl(el.avatarEditImg, frame, 256);
+          if (dataUrl) {
+            const next = await api.saveAvatarDataUrl(me.id, dataUrl);
+            if (next) setMyAvatar(next);
+          }
+        }
+      } catch (e) {
+        console.warn(e);
+      }
+      el.modalAvatar.hidden = true;
+    });
+  }
+
+  function cropAvatarToDataUrl(img, frame, size) {
+    return new Promise((resolve) => {
+      const canvas = document.createElement("canvas");
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext("2d");
+      const iw = img.naturalWidth || img.width;
+      const ih = img.naturalHeight || img.height;
+      if (!iw || !ih) return resolve(null);
+      // object-fit: cover + object-position yaklaşık simülasyonu
+      const scaleFit = Math.max(size / iw, size / ih) * (frame.scale || 1);
+      const dw = iw * scaleFit;
+      const dh = ih * scaleFit;
+      const ox = ((frame.x ?? 50) / 100) * (size - dw);
+      const oy = ((frame.y ?? 50) / 100) * (size - dh);
+      ctx.beginPath();
+      ctx.arc(size / 2, size / 2, size / 2, 0, Math.PI * 2);
+      ctx.closePath();
+      ctx.clip();
+      ctx.drawImage(img, ox, oy, dw, dh);
+      resolve(canvas.toDataURL("image/png"));
+    });
+  }
+
+  el.setMicVol.addEventListener("input", () => {
+    el.setMicVolVal.textContent = el.setMicVol.value + "%";
+  });
+
+  el.setHotkey.addEventListener("click", () => {
+    capturingHotkey = true;
+    capturingWhich = "mic";
+    el.setHotkey.value = "Tuşlara bas…";
+  });
+
+  if (el.setDeafenHotkey) {
+    el.setDeafenHotkey.addEventListener("click", () => {
+      capturingHotkey = true;
+      capturingWhich = "deafen";
+      el.setDeafenHotkey.value = "Tuşlara bas…";
+    });
+  }
+
+  el.btnClearHotkey.addEventListener("click", () => {
+    el.setHotkey.dataset.accel = "";
+    el.setHotkey.value = "";
+    capturingHotkey = false;
+  });
+
+  if (el.btnClearDeafen) {
+    el.btnClearDeafen.addEventListener("click", () => {
+      el.setDeafenHotkey.dataset.accel = "";
+      el.setDeafenHotkey.value = "";
+      capturingHotkey = false;
+    });
+  }
+
+  window.addEventListener(
+    "keydown",
+    (e) => {
+      if (!capturingHotkey) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const accel = eventToAccel(e);
+      if (!accel) return;
+      if (capturingWhich === "deafen" && el.setDeafenHotkey) {
+        el.setDeafenHotkey.dataset.accel = accel;
+        el.setDeafenHotkey.value = accelToLabel(accel);
+      } else {
+        el.setHotkey.dataset.accel = accel;
+        el.setHotkey.value = accelToLabel(accel);
+      }
+      capturingHotkey = false;
+    },
+    true
+  );
+
+  el.btnSettingsSave.addEventListener("click", async () => {
+    const micHotkey = el.setHotkey?.dataset?.accel || settings.micHotkey || "CommandOrControl+Shift+M";
+    const deafenHotkey =
+      (el.setDeafenHotkey && el.setDeafenHotkey.dataset.accel) ||
+      settings.deafenHotkey ||
+      "CommandOrControl+Shift+D";
+    const micVolume = el.setMicVol ? Number(el.setMicVol.value) : settings.micVolume ?? 100;
+    const soundIncoming = el.setSoundIncoming?.value || "fart_3.mp3";
+    const soundOutgoing = el.setSoundOutgoing?.value || "ring_outgoing.mp3";
+    const soundNotify = el.setSoundNotify?.value || "notify.mp3";
+    const soundRingEnabled = el.setSoundRingEnabled ? el.setSoundRingEnabled.checked : true;
+    const soundNotifyEnabled = el.setSoundNotifyEnabled ? el.setSoundNotifyEnabled.checked : true;
+    const soundMasterVolume = el.setSoundVol ? Number(el.setSoundVol.value) : 100;
+    const desktopNotify = $("set-desktop-notify") ? $("set-desktop-notify").checked : true;
+    settings = await api.saveSettings(me.id, {
+      micHotkey,
+      deafenHotkey,
+      micVolume,
+      soundIncoming,
+      soundOutgoing,
+      soundNotify,
+      soundRingEnabled,
+      soundNotifyEnabled,
+      soundMasterVolume,
+      desktopNotify,
+    });
+    applyMicVolume(micVolume);
+    rebuildSounds();
+    try {
+      if (snd.preview) {
+        snd.preview.pause();
+        snd.preview = null;
+      }
+    } catch {}
+    el.modalSettings.hidden = true;
+  });
+
+  el.btnLogout.addEventListener("click", async () => {
+    hangup();
+    clearInterval(presenceTimer);
+    if (stopCloudPresence) {
+      try {
+        await stopCloudPresence();
+      } catch {}
+      stopCloudPresence = null;
+    }
+    if (peer) {
+      try {
+        peer.destroy();
+      } catch {}
+      peer = null;
+    }
+    if (cloudMode && window.HearthCloud?.isEnabled()) {
+      try {
+        await window.HearthCloud.logout();
+      } catch {}
+    }
+    try {
+      await api.logout();
+    } catch {}
+    me = null;
+    friends = [];
+    activeFriend = null;
+    showAuth();
+    setCloudBadge();
+  });
+
+  document.querySelectorAll("[data-close]").forEach((b) => {
+    b.addEventListener("click", () => {
+      const id = b.getAttribute("data-close");
+      const m = document.getElementById(id);
+      if (m) m.hidden = true;
+    });
+  });
+
+  api.onMicHotkey(() => toggleMic());
+  if (api.onDeafenHotkey) api.onDeafenHotkey(() => toggleDeafen());
+
+  // prevent chat layout jump: keep composer fixed via CSS; also resize observer
+  window.addEventListener("resize", () => scrollChatToBottom(false));
+
+  // ---------- init ----------
+  (async () => {
+    try {
+      const cfg = (await api.cloudConfig?.()) || { enabled: false };
+      if (cfg.enabled && cfg.supabaseUrl && cfg.supabaseAnonKey && window.HearthCloud) {
+        const res = await window.HearthCloud.init(cfg);
+        cloudMode = !!(res && res.ok && window.HearthCloud.isEnabled());
+      } else {
+        cloudMode = false;
+      }
+    } catch (e) {
+      console.warn("cloud init", e);
+      cloudMode = false;
+    }
+    setCloudBadge();
+
+    if (cloudMode && window.HearthCloud) {
+      try {
+        const cu = await window.HearthCloud.currentUser();
+        if (cu) {
+          await enterApp(cu);
+          return;
+        }
+      } catch (e) {
+        console.warn(e);
+      }
+      showAuth();
+      return;
+    }
+
+    const session = await api.session();
+    if (session) await enterApp(session);
+    else showAuth();
+  })();
+})();

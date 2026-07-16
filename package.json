@@ -1,0 +1,86 @@
+{
+  "name": "hearth",
+  "version": "4.0.0",
+  "description": "Hearth - P2P sesli sohbet, ekran ve dosya",
+  "main": "main.js",
+  "author": "Faruk",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cesase/hearth.git"
+  },
+  "scripts": {
+    "start": "electron .",
+    "pack": "electron-builder --win portable --x64",
+    "setup": "electron-builder --win nsis --x64",
+    "dist": "electron-builder --win portable nsis --x64",
+    "publish:win": "electron-builder --win nsis --x64 --publish always"
+  },
+  "build": {
+    "appId": "com.hearth.app",
+    "productName": "Hearth",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "storage.js",
+      "public/**/*",
+      "assets/**/*",
+      "cloud/**/*",
+      "package.json"
+    ],
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "cesase",
+        "repo": "hearth",
+        "releaseType": "release"
+      }
+    ],
+    "win": {
+      "icon": "assets/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "${productName}-Setup.${ext}",
+      "signAndEditExecutable": false
+    },
+    "portable": {
+      "artifactName": "Hearth-Portable.exe"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Hearth",
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico",
+      "artifactName": "Hearth-Setup.exe",
+      "deleteAppDataOnUninstall": false
+    }
+  },
+  "devDependencies": {
+    "electron": "^33.4.11",
+    "electron-builder": "^25.1.8"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
+  },
+  "allowScripts": {
+    "electron@33.4.11": true
+  }
+}
