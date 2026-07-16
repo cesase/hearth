@@ -198,6 +198,9 @@
               <button type="button" id="btn-screen" class="icon-ctrl" title="Ekran paylaş" disabled>
                 <span class="ctrl-ico">🖥️</span><span class="ctrl-label">Share</span>
               </button>
+              <button type="button" id="btn-hangup-bar" class="icon-ctrl hangup-ctrl" title="Kapat">
+                <span class="ctrl-ico">📵</span><span class="ctrl-label">End</span>
+              </button>
             </div>
             <div class="call-sliders">
               <label class="slider-label" title="Mikrofon"><span>🎤</span> <span id="mic-vol-val">100%</span>
@@ -330,12 +333,14 @@
         <div class="settings-layout">
           <nav class="settings-nav" id="settings-nav">
             <button type="button" class="settings-nav-btn active" data-settings-tab="profile" data-i18n="tabProfile">👤 Profil</button>
-            <button type="button" class="settings-nav-btn" data-settings-tab="sound" data-i18n="tabSound">🔊 Ses</button>
-            <button type="button" class="settings-nav-btn" data-settings-tab="keys" data-i18n="tabKeys">⌨️ Tuş</button>
             <button type="button" class="settings-nav-btn" data-settings-tab="theme" data-i18n="tabTheme">🎨 Tema</button>
             <button type="button" class="settings-nav-btn" data-settings-tab="locale" data-i18n="tabLocale">🌐 Dil ve Zaman</button>
             <button type="button" class="settings-nav-btn" data-settings-tab="a11y" data-i18n="tabA11y">♿ Erişilebilirlik</button>
-            <button type="button" class="settings-nav-btn" data-settings-tab="security" data-i18n="tabSecurity">🔒 Güvenlik</button>
+            <button type="button" class="settings-nav-btn" data-settings-tab="sound" data-i18n="tabSound">🔊 Ses</button>
+            <button type="button" class="settings-nav-btn" data-settings-tab="keys" data-i18n="tabKeys">⌨️ Tuş</button>
+            <button type="button" class="settings-nav-btn" data-settings-tab="notify" data-i18n="tabNotify">🔔 Bildirimler</button>
+            <button type="button" class="settings-nav-btn" data-settings-tab="updates" data-i18n="tabUpdates">⬆️ Güncellemeler</button>
+            <button type="button" class="settings-nav-btn" data-settings-tab="security" data-i18n="tabSecurity">🔒 Hesap</button>
           </nav>
           <div class="settings-panels">
             <div class="settings-panel active" id="settings-tab-profile" data-settings-panel="profile">
@@ -358,24 +363,24 @@
 
             <div class="settings-panel" id="settings-tab-sound" data-settings-panel="sound" hidden>
               <h3 data-i18n="tabSound">Ses</h3>
-              <p class="hint">Arama, aranma ve bildirim sesleri. Önizle ile dinle.</p>
+              <p class="hint" data-i18n="soundHint">Arama ve bildirim sesleri. Önizle ile dinle.</p>
               <div class="sound-settings-grid">
                 <label class="sound-row">
-                  <span>Gelen arama (aranan)</span>
+                  <span data-i18n="soundIncoming">Gelen arama</span>
                   <div class="sound-pick">
                     <select id="set-sound-incoming"></select>
-                    <button type="button" class="btn soft sm" id="btn-preview-incoming" title="Önizle">▶</button>
+                    <button type="button" class="btn soft sm" id="btn-preview-incoming" data-i18n-title="preview" title="Önizle">▶</button>
                   </div>
                 </label>
                 <label class="sound-row">
-                  <span>Giden arama (arayan)</span>
+                  <span data-i18n="soundOutgoing">Giden arama</span>
                   <div class="sound-pick">
                     <select id="set-sound-outgoing"></select>
                     <button type="button" class="btn soft sm" id="btn-preview-outgoing" title="Önizle">▶</button>
                   </div>
                 </label>
                 <label class="sound-row">
-                  <span>Mesaj bildirimi</span>
+                  <span data-i18n="soundNotify">Mesaj bildirimi</span>
                   <div class="sound-pick">
                     <select id="set-sound-notify"></select>
                     <button type="button" class="btn soft sm" id="btn-preview-notify" title="Önizle">▶</button>
@@ -385,32 +390,32 @@
               <div class="sound-toggles">
                 <label class="check-row">
                   <input type="checkbox" id="set-sound-ring-enabled" checked />
-                  Arama zil sesleri
+                  <span data-i18n="ringSounds">Arama zil sesleri</span>
                 </label>
                 <label class="check-row">
                   <input type="checkbox" id="set-sound-notify-enabled" checked />
-                  Mesaj bildirim sesi
+                  <span data-i18n="notifySounds">Mesaj bildirim sesi</span>
                 </label>
               </div>
-              <label class="slider-label">Zil & bildirim seviyesi <span id="set-sound-vol-val">100%</span></label>
+              <label class="slider-label"><span data-i18n="soundVol">Zil & bildirim seviyesi</span> <span id="set-sound-vol-val">100%</span></label>
               <input id="set-sound-vol" type="range" min="0" max="100" value="100" />
-              <label class="slider-label">Varsayılan mikrofon seviyesi <span id="set-mic-vol-val">100%</span></label>
+              <label class="slider-label"><span data-i18n="micVol">Varsayılan mikrofon seviyesi</span> <span id="set-mic-vol-val">100%</span></label>
               <input id="set-mic-vol" type="range" min="0" max="200" value="100" />
             </div>
 
             <div class="settings-panel" id="settings-tab-keys" data-settings-panel="keys" hidden>
-              <h3>Tuş kısayolları</h3>
-              <p class="hint">Kendi kombinasyonunu kaydet. Logitech G Hub makrosu da aynı tuşları gönderebilir.</p>
-              <label>Mikrofon aç/kapa
+              <h3 data-i18n="tabKeys">Tuş kısayolları</h3>
+              <p class="hint" data-i18n="keysHint">Kendi kombinasyonunu kaydet.</p>
+              <label><span data-i18n="micHotkey">Mikrofon aç/kapa</span>
                 <div class="hotkey-row">
-                  <input id="set-hotkey" type="text" readonly placeholder="Tıkla ve tuşa bas…" />
-                  <button type="button" id="btn-clear-hotkey" class="btn soft sm">Temizle</button>
+                  <input id="set-hotkey" type="text" readonly placeholder="…" />
+                  <button type="button" id="btn-clear-hotkey" class="btn soft sm" data-i18n="clear">Temizle</button>
                 </div>
               </label>
-              <label>Deafen
+              <label><span data-i18n="deafHotkey">Deafen</span>
                 <div class="hotkey-row">
-                  <input id="set-deafen-hotkey" type="text" readonly placeholder="Tıkla ve tuşa bas…" />
-                  <button type="button" id="btn-clear-deafen" class="btn soft sm">Temizle</button>
+                  <input id="set-deafen-hotkey" type="text" readonly placeholder="…" />
+                  <button type="button" id="btn-clear-deafen" class="btn soft sm" data-i18n="clear">Temizle</button>
                 </div>
               </label>
             </div>
@@ -448,19 +453,36 @@
               <p class="hint" data-i18n="fontScaleHint">Tüm arayüz yazılarını büyütür / küçültür.</p>
             </div>
 
-            <div class="settings-panel" id="settings-tab-security" data-settings-panel="security" hidden>
-              <h3 data-i18n="tabSecurity">Güvenlik & hesap</h3>
-              <p class="hint" data-i18n="securityHint">Bulut modunda hesap Supabase’de; yerel modda bu cihazda saklanır.</p>
-              <label data-i18n="username">Kullanıcı adı<input id="set-username" type="text" disabled /></label>
-              <label data-i18n="email">E-posta<input id="set-email" type="text" disabled /></label>
+            <div class="settings-panel" id="settings-tab-notify" data-settings-panel="notify" hidden>
+              <h3 data-i18n="tabNotify">Bildirimler</h3>
+              <p class="hint" data-i18n="notifyHint">Rahatsız etmede ses çalmaz; çevrimiçiye dönünce yeniden çalışır.</p>
               <label class="check-row">
                 <input type="checkbox" id="set-desktop-notify" checked />
                 <span data-i18n="desktopNotify">Masaüstü bildirimleri</span>
               </label>
-              <h3 style="margin-top:1.25rem" data-i18n="appSection">Uygulama</h3>
+              <label class="check-row">
+                <input type="checkbox" id="set-sound-notify-enabled-notify" checked />
+                <span data-i18n="notifySounds">Mesaj bildirim sesi</span>
+              </label>
+              <label class="check-row">
+                <input type="checkbox" id="set-sound-ring-enabled-notify" checked />
+                <span data-i18n="ringSounds">Arama zil sesleri</span>
+              </label>
+            </div>
+
+            <div class="settings-panel" id="settings-tab-updates" data-settings-panel="updates" hidden>
+              <h3 data-i18n="tabUpdates">Güncellemeler</h3>
               <p class="hint" id="app-version-label">Sürüm: …</p>
               <p class="hint tiny" id="update-status-label"></p>
               <button type="button" id="btn-check-updates" class="btn soft" data-i18n="checkUpdates">Güncellemeleri kontrol et</button>
+              <p class="hint" data-i18n="updateHint">Sol üst logoda ↑ işareti de güncellemeyi başlatır.</p>
+            </div>
+
+            <div class="settings-panel" id="settings-tab-security" data-settings-panel="security" hidden>
+              <h3 data-i18n="tabSecurity">Hesap</h3>
+              <p class="hint" data-i18n="securityHint">Bulut modunda hesap Supabase’de; yerel modda bu cihazda saklanır.</p>
+              <label data-i18n="username">Kullanıcı adı<input id="set-username" type="text" disabled /></label>
+              <label data-i18n="email">E-posta<input id="set-email" type="text" disabled /></label>
               <p class="hint" data-i18n="logoutHint">Oturumu kapatırsan sohbet geçmişi silinmez.</p>
               <button type="button" id="btn-logout" class="btn danger" data-i18n="logout">Çıkış yap</button>
             </div>

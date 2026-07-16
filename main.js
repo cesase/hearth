@@ -28,6 +28,14 @@ if (process.env.HEARTH_USER_DATA) {
 const storage = require("./storage");
 const IS_UI_TEST = process.env.HEARTH_UI_TEST === "1" || process.env.HEARTH_UI_TEST === "true";
 
+/** Production'da console gürültüsünü azalt (UI test / dev açık kalsın) */
+function devLog(...args) {
+  if (IS_UI_TEST || !app.isPackaged) console.log(...args);
+}
+function devWarn(...args) {
+  if (IS_UI_TEST || !app.isPackaged) console.warn(...args);
+}
+
 /** @type {import('electron-updater').AppUpdater | null} */
 let autoUpdater = null;
 let updateCheckInFlight = false;
@@ -274,11 +282,18 @@ let pendingScreenSourceId = null;
 let currentUserId = null;
 
 function appIconPath() {
-  const ico = path.join(__dirname, "assets", "icon.ico");
-  const png = path.join(__dirname, "assets", "icon.png");
-  if (process.platform === "win32" && fs.existsSync(ico)) return ico;
-  if (fs.existsSync(png)) return png;
-  if (fs.existsSync(ico)) return ico;
+  // Mutlak yol — Windows görev çubuğu / pencere ikonu için kritik
+  const candidates = [
+    path.resolve(__dirname, "assets", "icon.ico"),
+    path.resolve(process.resourcesPath || "", "assets", "icon.ico"),
+    path.resolve(__dirname, "assets", "icon.png"),
+    path.resolve(process.resourcesPath || "", "assets", "icon.png"),
+  ];
+  for (const p of candidates) {
+    try {
+      if (p && fs.existsSync(p)) return p;
+    } catch {}
+  }
   return null;
 }
 
@@ -303,8 +318,10 @@ function createWindow() {
     backgroundColor: "#1a1b1e",
     autoHideMenuBar: true,
     show: false,
-    // Windows görev çubuğu: .ico yolu en güvenilir
+    // Windows: mutlak .ico yolu (görev çubuğu + başlık çubuğu)
     icon: iconPath || (icon.isEmpty() ? undefined : icon),
+    // Paketli uygulamada process adı / atlama listesi
+    // (AppUserModelId app ready öncesi set edilir)
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,

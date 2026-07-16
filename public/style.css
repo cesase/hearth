@@ -2238,6 +2238,11 @@ html body { font-size: calc(var(--fs-body) * var(--font-scale)); }
   text-transform: uppercase;
 }
 .icon-ctrl.active-mic .ctrl-label { color: #86efac; }
+.icon-ctrl.hangup-ctrl {
+  background: rgba(242, 63, 67, 0.18) !important;
+  border-color: rgba(242, 63, 67, 0.4) !important;
+}
+.icon-ctrl.hangup-ctrl .ctrl-label { color: #fca5a5; }
 
 /* Message stack: same-author lines inside one bubble */
 .msg.stack-host {

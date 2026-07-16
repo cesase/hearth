@@ -88,6 +88,7 @@
     stageActions: $("stage-actions"),
     btnCall: $("btn-call"),
     btnHangup: $("btn-hangup"),
+    btnHangupBar: $("btn-hangup-bar"),
     incomingBar: $("incoming-bar"),
     incomingText: $("incoming-text"),
     btnAccept: $("btn-accept"),
@@ -918,6 +919,7 @@
     el.btnCall.disabled = inCall;
     el.btnCall.hidden = inCall;
     el.btnHangup.hidden = !inCall;
+    if (el.btnHangupBar) el.btnHangupBar.hidden = !inCall;
     el.btnFile.disabled = false;
     if (el.btnScreen) el.btnScreen.disabled = !inCall;
     setScreenBtnUi();
@@ -1085,7 +1087,9 @@
       const d = document.createElement("div");
       d.className = "empty-friends";
       d.innerHTML =
-        "<div class='empty-icon'>👥</div><p style='margin:8px 0 4px;font-weight:700;color:var(--text)'>Henüz arkadaş yok</p><small>＋ ile kullanıcı adı ekle</small>";
+        "<div class='empty-icon'>👥</div><p style='margin:8px 0 4px;font-weight:700;color:var(--text)'></p><small></small>";
+      d.querySelector("p").textContent = t("noFriends");
+      d.querySelector("small").textContent = t("addFriendHintEmpty");
       el.friendList.appendChild(d);
       updateGroupSelectionUi();
       return;
@@ -1097,7 +1101,8 @@
       if (st === "online" || st === "busy") online.push(f);
       else offline.push(f);
     }
-    const sortFn = (a, b) => (a.displayName || a.username).localeCompare(b.displayName || b.username, "tr");
+    const sortFn = (a, b) =>
+      (a.displayName || a.username).localeCompare(b.displayName || b.username, prefs.language === "en" ? "en" : "tr");
     online.sort(sortFn);
     offline.sort(sortFn);
 
@@ -1140,7 +1145,13 @@
     if (!el.groupList) return;
     el.groupList.innerHTML = "";
     if (!groups.length) {
-      if (el.groupEmpty) el.groupEmpty.hidden = false;
+      if (el.groupEmpty) {
+        el.groupEmpty.hidden = false;
+        const p = el.groupEmpty.querySelector("p");
+        const s = el.groupEmpty.querySelector("small");
+        if (p) p.textContent = t("noGroups");
+        if (s) s.textContent = t("groupEmptyHint");
+      }
       return;
     }
     if (el.groupEmpty) el.groupEmpty.hidden = true;
@@ -1154,13 +1165,13 @@
       }).length;
       btn.innerHTML = `<strong></strong><small></small>`;
       btn.querySelector("strong").textContent = g.name;
-      btn.querySelector("small").textContent = `${g.members.length} üye · ${onlineN} çevrimiçi`;
+      btn.querySelector("small").textContent = `${g.members.length} ${t("members")} · ${onlineN} ${t("online").toLowerCase()}`;
       const actions = document.createElement("div");
       actions.className = "group-item-actions";
       const callBtn = document.createElement("button");
       callBtn.type = "button";
       callBtn.className = "btn soft sm";
-      callBtn.textContent = "📞 Ara";
+      callBtn.textContent = "📞 " + t("call");
       callBtn.addEventListener("click", (e) => {
         e.stopPropagation();
         openGroup(g.id).then(() => startGroupCall(g));
@@ -1169,10 +1180,10 @@
       delBtn.type = "button";
       delBtn.className = "btn danger sm btn-del-group";
       delBtn.textContent = "🗑️";
-      delBtn.title = "Grubu sil";
+      delBtn.title = t("deleteGroup");
       delBtn.addEventListener("click", async (e) => {
         e.stopPropagation();
-        if (!confirm(`"${g.name}" silinsin mi?`)) return;
+        if (!confirm(`"${g.name}" ${t("confirmDeleteGroup")}`)) return;
         try {
           await api.deleteGroup(me.id, g.id);
           groups = await api.listGroups(me.id);
@@ -3598,6 +3609,7 @@
   // ---------- call controls ----------
   el.btnCall.addEventListener("click", () => startCall());
   el.btnHangup.addEventListener("click", () => hangup());
+  if (el.btnHangupBar) el.btnHangupBar.addEventListener("click", () => hangup());
   el.btnAccept.addEventListener("click", () => acceptCall());
   el.btnReject.addEventListener("click", () => rejectCall());
   el.btnMic.addEventListener("click", () => toggleMic());
@@ -3951,6 +3963,11 @@
     fillSoundSelect(el.setSoundNotify, settings.soundNotify || "notify.mp3");
     if (el.setSoundRingEnabled) el.setSoundRingEnabled.checked = settings.soundRingEnabled !== false;
     if (el.setSoundNotifyEnabled) el.setSoundNotifyEnabled.checked = settings.soundNotifyEnabled !== false;
+    // Bildirimler sekmesi kopya kutular
+    const nr = $("set-sound-ring-enabled-notify");
+    const nn = $("set-sound-notify-enabled-notify");
+    if (nr) nr.checked = settings.soundRingEnabled !== false;
+    if (nn) nn.checked = settings.soundNotifyEnabled !== false;
     if (el.setSoundVol) {
       el.setSoundVol.value = String(settings.soundMasterVolume ?? 100);
       if (el.setSoundVolVal) el.setSoundVolVal.textContent = (settings.soundMasterVolume ?? 100) + "%";
@@ -4280,8 +4297,16 @@
     const soundIncoming = el.setSoundIncoming?.value || "fart_3.mp3";
     const soundOutgoing = el.setSoundOutgoing?.value || "ring_outgoing.mp3";
     const soundNotify = el.setSoundNotify?.value || "notify.mp3";
-    const soundRingEnabled = el.setSoundRingEnabled ? el.setSoundRingEnabled.checked : true;
-    const soundNotifyEnabled = el.setSoundNotifyEnabled ? el.setSoundNotifyEnabled.checked : true;
+    // Ses + Bildirim sekmelerindeki checkbox'ları senkron oku
+    const ringNotifyEl = $("set-sound-ring-enabled-notify");
+    const ntfNotifyEl = $("set-sound-notify-enabled-notify");
+    // Öncelik: ses sekmesi; bildirim sekmesi de güncellendiyse onu kullan (open'da ikisi de aynı set edilir)
+    let ringSave = el.setSoundRingEnabled ? el.setSoundRingEnabled.checked : true;
+    let ntfSave = el.setSoundNotifyEnabled ? el.setSoundNotifyEnabled.checked : true;
+    if (ringNotifyEl) ringSave = ringNotifyEl.checked;
+    if (ntfNotifyEl) ntfSave = ntfNotifyEl.checked;
+    if (el.setSoundRingEnabled) el.setSoundRingEnabled.checked = ringSave;
+    if (el.setSoundNotifyEnabled) el.setSoundNotifyEnabled.checked = ntfSave;
     const soundMasterVolume = el.setSoundVol ? Number(el.setSoundVol.value) : 100;
     const desktopNotify = $("set-desktop-notify") ? $("set-desktop-notify").checked : true;
     const theme =
@@ -4299,8 +4324,8 @@
       soundIncoming,
       soundOutgoing,
       soundNotify,
-      soundRingEnabled,
-      soundNotifyEnabled,
+      soundRingEnabled: ringSave,
+      soundNotifyEnabled: ntfSave,
       soundMasterVolume,
       desktopNotify,
       theme,
