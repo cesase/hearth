@@ -1,6 +1,6 @@
 {
   "name": "hearth",
-  "version": "4.3.0",
+  "version": "4.4.0",
   "description": "Hearth - P2P sesli sohbet, ekran ve dosya",
   "main": "main.js",
   "author": "Faruk",
@@ -27,6 +27,7 @@
     },
     "files": [
       "main.js",
+      "main/**/*",
       "preload.js",
       "storage.js",
       "public/**/*",

@@ -157,6 +157,19 @@ async function run() {
     results.push("add-friend modal OK");
     await lab.shot("05-final");
 
+    // 8) Ayar sekmeleri (Toju-inspired organized settings)
+    await win.locator("#btn-open-settings").click();
+    await win.locator("#modal-settings").waitFor({ state: "visible", timeout: 5000 });
+    for (const tab of ["theme", "locale", "notify", "updates", "security"]) {
+      const b = win.locator(`[data-settings-tab="${tab}"]`);
+      if (await b.count()) {
+        await b.click();
+        await win.waitForTimeout(80);
+      }
+    }
+    await win.keyboard.press("Escape");
+    results.push("settings tabs OK");
+
     log("PASS — " + results.join(" | "));
     console.log("\n=== UI SMOKE PASS ===");
     results.forEach((r) => console.log("  ✓ " + r));

@@ -1,5 +1,15 @@
 # Changelog
 
+## 4.4.0
+
+### Toju-inspired architecture (phase 0–1)
+
+- `ARCHITECTURE.md`, `LESSONS.md`, `docs/TOJU-ADAPT.md`
+- `main/display-media.js` — **singleton** `setDisplayMediaRequestHandler` (Toju rule)
+- `main/icon.js` — packaged vs dev asset path resolution
+- Call hangup: stop tracks + null all media `srcObject` (memory invariant)
+- UI smoke: settings tabs coverage
+
 ## 4.3.0
 
 ### Stabilite & QA

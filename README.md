@@ -30,6 +30,12 @@ npm run ui:lab     # aynı, pencereyi sen de gör
 
 Detay: `tests/README.md` · çıktı: `tests/artifacts/latest.png`
 
+### Mimari (Toju kalıpları)
+
+- `ARCHITECTURE.md` — katmanlar  
+- `LESSONS.md` — bakım kuralları  
+- `docs/TOJU-ADAPT.md` — Toju’dan ne alındı / alınmadı  
+
 ### GitHub (cesase)
 
 - Repo: https://github.com/cesase/hearth  

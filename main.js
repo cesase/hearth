@@ -26,6 +26,11 @@ if (process.env.HEARTH_USER_DATA) {
 }
 
 const storage = require("./storage");
+const { appIconPath, appIcon } = require("./main/icon");
+const {
+  setupDisplayMedia,
+  setPendingScreenSourceId,
+} = require("./main/display-media");
 const IS_UI_TEST = process.env.HEARTH_UI_TEST === "1" || process.env.HEARTH_UI_TEST === "true";
 
 /** Production'da console gürültüsünü azalt (UI test / dev açık kalsın) */
@@ -278,33 +283,7 @@ function loadCloudConfig() {
 let win = null;
 /** @type {Tray | null} */
 let tray = null;
-let pendingScreenSourceId = null;
 let currentUserId = null;
-
-function appIconPath() {
-  // Mutlak yol — Windows görev çubuğu / pencere ikonu için kritik
-  const candidates = [
-    path.resolve(__dirname, "assets", "icon.ico"),
-    path.resolve(process.resourcesPath || "", "assets", "icon.ico"),
-    path.resolve(__dirname, "assets", "icon.png"),
-    path.resolve(process.resourcesPath || "", "assets", "icon.png"),
-  ];
-  for (const p of candidates) {
-    try {
-      if (p && fs.existsSync(p)) return p;
-    } catch {}
-  }
-  return null;
-}
-
-function appIcon() {
-  const p = appIconPath();
-  if (p) {
-    const img = nativeImage.createFromPath(p);
-    if (!img.isEmpty()) return img;
-  }
-  return nativeImage.createEmpty();
-}
 
 function createWindow() {
   const iconPath = appIconPath();
@@ -419,54 +398,6 @@ function registerShortcutsForUser(userId) {
   }
 }
 
-function setupDisplayMedia() {
-  const ses = require("electron").session.defaultSession;
-  ses.setPermissionRequestHandler((_wc, permission, callback) => {
-    if (permission === "media" || permission === "display-capture") {
-      callback(true);
-      return;
-    }
-    callback(false);
-  });
-  try {
-    // Electron: video + loopback ses. Renderer'da karmaşık constraint YOK — yoksa capture fail olur.
-    ses.setDisplayMediaRequestHandler(async (request, callback) => {
-      try {
-        const sources = await desktopCapturer.getSources({
-          types: ["screen", "window"],
-          thumbnailSize: { width: 0, height: 0 },
-        });
-        let source = sources[0];
-        if (pendingScreenSourceId) {
-          source = sources.find((s) => s.id === pendingScreenSourceId) || source;
-        }
-        pendingScreenSourceId = null;
-        if (!source) {
-          callback({});
-          return;
-        }
-        // Sistem sesi: Windows loopback (renderer getDisplayMedia audio:true → audioRequested)
-        const wantAudio = !!(request && request.audioRequested);
-        if (wantAudio) {
-          callback({ video: source, audio: "loopback" });
-        } else {
-          // Yine de loopback dene — bazı Electron sürümlerinde flag gelmiyor
-          try {
-            callback({ video: source, audio: "loopback" });
-          } catch {
-            callback({ video: source });
-          }
-        }
-      } catch (err) {
-        console.warn("displayMedia handler", err);
-        callback({});
-      }
-    });
-  } catch (e) {
-    console.warn(e);
-  }
-}
-
 // Windows: görev çubuğu kimliği — app ready ÖNCESİ set edilmeli
 if (process.platform === "win32") {
   try {
@@ -487,7 +418,7 @@ app.whenReady().then(() => {
     if (win && ip && typeof win.setIcon === "function") win.setIcon(ip);
   } catch {}
   if (!IS_UI_TEST) createTray();
-  setupDisplayMedia();
+  setupDisplayMedia({ log: (m, e) => devWarn(m, e) });
   setupAutoUpdater();
   const session = storage.currentSession();
   if (session) {
@@ -609,7 +540,7 @@ ipcMain.handle("pick-screen-sources", async () => {
   }));
 });
 ipcMain.handle("set-screen-source", (_e, id) => {
-  pendingScreenSourceId = id || null;
+  setPendingScreenSourceId(id || null);
   return true;
 });
 

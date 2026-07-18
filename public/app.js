@@ -2593,14 +2593,34 @@
     el.callTimer.textContent = "00:00";
   }
 
+  /** Toju invariant: stop tracks + null srcObject so Chromium releases buffers */
+  function releaseMediaElement(elMedia) {
+    if (!elMedia) return;
+    try {
+      const s = elMedia.srcObject;
+      if (s && typeof s.getTracks === "function") {
+        s.getTracks().forEach((t) => {
+          try {
+            t.stop();
+          } catch {}
+        });
+      }
+    } catch {}
+    try {
+      elMedia.pause?.();
+    } catch {}
+    elMedia.srcObject = null;
+  }
+
   function endCallUi() {
     inCall = false;
     callWith = null;
     el.mediaDock.hidden = true;
-    el.remoteVideo.srcObject = null;
-    el.localVideo.srcObject = null;
-    el.remoteAudio.srcObject = null;
-    if (el.remoteScreenAudio) el.remoteScreenAudio.srcObject = null;
+    releaseMediaElement(el.remoteVideo);
+    releaseMediaElement(el.localVideo);
+    releaseMediaElement(el.remoteAudio);
+    releaseMediaElement(el.remoteScreenAudio);
+    clearPeerVoices();
     el.remotePh.hidden = false;
     el.localPh.hidden = false;
     stopCallTimer();
