@@ -16,10 +16,14 @@ Bulut (Supabase) kurulum: **[CLOUD.md](./CLOUD.md)**
 
 ```bash
 npm install
-npm start          # geliştirme
+npm start          # Electron (yerel signal gömülü: 127.0.0.1:9000)
+npm run signal     # Ayrı signal sunucusu (LAN/VPS; tüm arkadaşlar aynı host)
 npm run setup      # dist/Hearth-Setup.exe
 npm run pack       # dist/Hearth-Portable.exe
 ```
+
+Signal yapılandırması: `cloud/signal.example.json` veya `cloud/config.json` → `"signal"`.  
+Detay: `signal-server/README.md`
 
 ### UI laboratuvarı (arayüzü robot ile dene)
 

@@ -9,27 +9,35 @@ Hearth is a **desktop-first friend chat**: 1:1 / small-group **P2P** voice, scre
 Toju (`Desktop/toju`) is a mature monorepo (Angular + Electron + signaling server + Playwright). Hearth adopts its **proven boundaries**, not its full stack.
 
 ```
-┌─────────────────┐   WS / cloud (meta only)   ┌──────────────────┐
-│  Hearth client  │◄──────────────────────────►│ Supabase (auth,  │
-│  Electron + UI  │   accounts / friends       │  friends, presence) │
-└────────┬────────┘                            └──────────────────┘
-         │
-         │ WebRTC media + data (P2P)
+┌─────────────────┐   auth / friends (opt)     ┌──────────────────┐
+│  Hearth client  │◄──────────────────────────►│ Supabase         │
+│  Electron + UI  │                            └──────────────────┘
+└────────┬────────┘
+         │ PeerJS path + presence WS (signaling only)
+         ▼
+┌─────────────────┐
+│ signal-server   │  /peerjs · /presence · /health
+│ (embed or VPS)  │  media never traverses here
+└────────┬────────┘
+         │ after SDP/ICE: direct WebRTC P2P
          ▼
     Friend devices
 ```
 
-**Today:** PeerJS still provides public signaling for WebRTC.  
-**Target (phase 2):** own lightweight signal server (Toju-style offer/answer/ICE + status), media never on server.
+**Phase 2 (current):** self-hosted PeerJS (`ExpressPeerServer`) + presence WebSocket.  
+Public `0.peerjs.com` is fallback only when `signal.enabled === false`.  
+Media (audio/video/files) is always P2P — never through the signal process.
 
 ## Layers
 
 | Layer | Owns |
 |-------|------|
-| `main.js` + `main/*` | Window, tray, icon, display-media singleton, IPC, auto-update |
+| `main.js` + `main/*` | Window, tray, icon, display-media singleton, IPC, auto-update, optional signal embed |
 | `preload.js` | `window.api` bridge only |
 | `public/app.js` | UI + PeerJS session (to be split into domains) |
+| `public/infrastructure/` | Presence WS client |
 | `public/cloud/` | Supabase client |
+| `signal-server/` | PeerJS + presence (LAN / VPS / Electron embed) |
 | `storage.js` | Local JSON userData |
 | `tests/ui/` | Playwright UI lab |
 

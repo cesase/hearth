@@ -1,0 +1,9 @@
+{
+  "enabled": true,
+  "host": "127.0.0.1",
+  "port": 9000,
+  "secure": false,
+  "peerPath": "/peerjs",
+  "presencePath": "/presence",
+  "note": "Tüm arkadaşlar aynı host'u kullanmalı. LAN için bilgisayarın yerel IP'sini yaz."
+}

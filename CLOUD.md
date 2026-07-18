@@ -6,7 +6,7 @@
 |----|--------|
 | Ses, ekran, dosya | **P2P WebRTC** (cihazlar arası) |
 | Hesap, @username, arkadaş, online | **Supabase** (bulut) |
-| WebRTC bağlantı sinyali | Şimdilik PeerJS; ileride Realtime/signals tablosu |
+| WebRTC bağlantı sinyali | Own `signal-server` (PeerJS `/peerjs` + presence WS); public PeerJS fallback |
 
 **Hearth.exe yine herkesin bilgisayarında çalışır.**  
 Sunucu = API + veritabanı; medya depolamaz.

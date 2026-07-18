@@ -12,6 +12,7 @@ const {
 } = require("electron");
 const path = require("path");
 const fs = require("fs");
+const net = require("net");
 
 // UI laboratuvarı / smoke: ayrı userData (gerçek hesap bozulmaz)
 // app.ready ÖNCESİ set edilmeli
@@ -23,6 +24,12 @@ if (process.env.HEARTH_USER_DATA) {
   } catch (e) {
     console.warn("HEARTH_USER_DATA", e.message);
   }
+}
+
+// Tek örnek: ikinci tıklamada yeni süreç açılıp kapanmasın; mevcut pencereye odaklan
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+if (!gotSingleInstanceLock) {
+  app.quit();
 }
 
 const storage = require("./storage");
@@ -225,18 +232,46 @@ function isPlaceholderKey(key) {
   return false;
 }
 
+function defaultSignalConfig() {
+  return {
+    enabled: true,
+    host: process.env.HEARTH_SIGNAL_HOST || "127.0.0.1",
+    port: Number(process.env.HEARTH_SIGNAL_PORT || 9000),
+    secure: process.env.HEARTH_SIGNAL_SECURE === "1",
+    peerPath: "/peerjs",
+    presencePath: "/presence",
+    embed: true,
+  };
+}
+
+function loadSignalFile() {
+  const p = path.join(__dirname, "cloud", "signal.json");
+  try {
+    if (fs.existsSync(p)) {
+      return JSON.parse(fs.readFileSync(p, "utf8"));
+    }
+  } catch (e) {
+    devWarn("signal.json", e.message);
+  }
+  return null;
+}
+
 function loadCloudConfig() {
-  // Smoke / UI lab: her zaman yerel mod (Supabase ağı testleri bozmasın)
+  // Smoke / UI lab: bulut + dış signal kapalı (izole temp profile)
   if (IS_UI_TEST) {
-    return { enabled: false, reason: "ui-test" };
+    return { enabled: false, reason: "ui-test", signal: { enabled: false } };
   }
+
+  let cfg = { enabled: false, signal: defaultSignalConfig() };
+  const fileSignal = loadSignalFile();
+  if (fileSignal) cfg.signal = { ...cfg.signal, ...fileSignal };
+
   if (process.env.HEARTH_SUPABASE_URL && process.env.HEARTH_SUPABASE_ANON_KEY) {
-    return {
-      enabled: true,
-      supabaseUrl: normalizeSupabaseUrl(process.env.HEARTH_SUPABASE_URL),
-      supabaseAnonKey: process.env.HEARTH_SUPABASE_ANON_KEY,
-    };
+    cfg.enabled = true;
+    cfg.supabaseUrl = normalizeSupabaseUrl(process.env.HEARTH_SUPABASE_URL);
+    cfg.supabaseAnonKey = process.env.HEARTH_SUPABASE_ANON_KEY;
   }
+
   const candidates = [path.join(__dirname, "cloud", "config.json")];
   try {
     if (app.isReady()) {
@@ -247,36 +282,86 @@ function loadCloudConfig() {
   }
   for (const p of candidates) {
     try {
-      if (fs.existsSync(p)) {
-        const j = JSON.parse(fs.readFileSync(p, "utf8"));
-        if (j && j.supabaseUrl && j.supabaseAnonKey) {
-          const originalUrl = String(j.supabaseUrl).trim();
-          const url = normalizeSupabaseUrl(originalUrl);
-          j.supabaseUrl = url;
-          // Diskteki yanlış /rest/v1/ yolunu kalıcı düzelt
-          if (originalUrl !== url) {
-            try {
-              fs.writeFileSync(p, JSON.stringify({ ...j, supabaseUrl: url }, null, 2), "utf8");
-              console.log("cloud config URL düzeltildi:", originalUrl, "→", url);
-            } catch (writeErr) {
-              console.warn("cloud config yazılamadı", writeErr.message);
-            }
+      if (!fs.existsSync(p)) continue;
+      const j = JSON.parse(fs.readFileSync(p, "utf8"));
+      if (!j) continue;
+      if (j.signal) cfg.signal = { ...cfg.signal, ...j.signal };
+      if (j.supabaseUrl && j.supabaseAnonKey) {
+        const originalUrl = String(j.supabaseUrl).trim();
+        const url = normalizeSupabaseUrl(originalUrl);
+        if (originalUrl !== url) {
+          try {
+            j.supabaseUrl = url;
+            fs.writeFileSync(p, JSON.stringify(j, null, 2), "utf8");
+            devLog("cloud config URL düzeltildi:", originalUrl, "→", url);
+          } catch (writeErr) {
+            devWarn("cloud config yazılamadı", writeErr.message);
           }
-          if (isPlaceholderKey(j.supabaseAnonKey)) {
-            console.warn("cloud config: anon/publishable key eksik veya örnek metin");
-            return { enabled: false, reason: "missing-key" };
-          }
-          if (!/^https:\/\/[a-z0-9-]+\.supabase\.co$/i.test(url)) {
-            console.warn("cloud config: supabaseUrl beklenen formatta değil:", url);
-          }
-          return j;
+        }
+        if (!isPlaceholderKey(j.supabaseAnonKey)) {
+          cfg.enabled = j.enabled !== false;
+          cfg.supabaseUrl = url;
+          cfg.supabaseAnonKey = j.supabaseAnonKey;
+          if (j.note) cfg.note = j.note;
+        } else {
+          devWarn("cloud config: anon/publishable key eksik veya örnek metin");
         }
       }
+      break;
     } catch (e) {
-      console.warn("cloud config", p, e.message);
+      devWarn("cloud config", p, e.message);
     }
   }
-  return { enabled: false };
+  return cfg;
+}
+
+/** Port boş mu? (EADDRINUSE crash'ini önlemek için dinlemeden önce) */
+function isPortFree(port, host = "0.0.0.0") {
+  return new Promise((resolve) => {
+    const tester = net.createServer();
+    tester.unref();
+    tester.once("error", () => resolve(false));
+    tester.once("listening", () => {
+      tester.close(() => resolve(true));
+    });
+    try {
+      tester.listen(Number(port) || 9000, host);
+    } catch {
+      resolve(false);
+    }
+  });
+}
+
+/** Yerel signal sunucusunu (PeerJS + presence) süreç içi başlat */
+let signalStarted = false;
+async function maybeEmbedSignalServer(cfg) {
+  if (IS_UI_TEST || signalStarted) return;
+  const s = cfg && cfg.signal;
+  if (!s || s.enabled === false || s.embed === false) return;
+  const host = String(s.host || "127.0.0.1");
+  if (host !== "127.0.0.1" && host !== "localhost" && host !== "0.0.0.0") {
+    // Uzak sunucu — embed yok
+    return;
+  }
+  const port = Number(s.port || 9000);
+  try {
+    const free = await isPortFree(port, "0.0.0.0");
+    if (!free) {
+      // Başka Hearth/signal zaten dinliyor — gömülü sunucuyu atla, uygulama açılsın
+      devWarn("signal port busy, skip embed", port);
+      signalStarted = true;
+      return;
+    }
+    process.env.PORT = String(port);
+    process.env.HOST = "0.0.0.0";
+    process.env.HEARTH_SIGNAL_SKIP_LISTEN = "0";
+    require("./signal-server/index.js");
+    signalStarted = true;
+    devLog("hearth-signal embed port", process.env.PORT);
+  } catch (e) {
+    devWarn("signal embed", e && e.message ? e.message : e);
+    signalStarted = true;
+  }
 }
 
 /** @type {BrowserWindow | null} */
@@ -340,7 +425,15 @@ function createTray() {
       )
     );
   } else {
-    img = img.resize({ width: 16, height: 16 });
+    // Prefer native 16px from multi-size .ico when available
+    try {
+      const sz = img.getSize();
+      if (sz.width > 16 || sz.height > 16) {
+        img = img.resize({ width: 16, height: 16, quality: "best" });
+      }
+    } catch {
+      img = img.resize({ width: 16, height: 16 });
+    }
   }
   tray = new Tray(img);
   tray.setToolTip("Hearth");
@@ -405,7 +498,20 @@ if (process.platform === "win32") {
   } catch {}
 }
 
-app.whenReady().then(() => {
+if (gotSingleInstanceLock) {
+  app.on("second-instance", () => {
+    if (win) {
+      if (win.isMinimized()) win.restore();
+      win.show();
+      win.focus();
+    } else {
+      createWindow();
+    }
+  });
+}
+
+app.whenReady().then(async () => {
+  if (!gotSingleInstanceLock) return;
   if (process.platform === "win32") {
     try {
       app.setAppUserModelId("com.hearth.app");
@@ -420,6 +526,11 @@ app.whenReady().then(() => {
   if (!IS_UI_TEST) createTray();
   setupDisplayMedia({ log: (m, e) => devWarn(m, e) });
   setupAutoUpdater();
+  try {
+    await maybeEmbedSignalServer(loadCloudConfig());
+  } catch (e) {
+    devWarn("signal start", e);
+  }
   const session = storage.currentSession();
   if (session) {
     currentUserId = session.id;

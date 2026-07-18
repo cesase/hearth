@@ -27,6 +27,12 @@ Rules learned from shipping Hearth and from Toju’s engineering notes. Keep sho
 - **Rule:** Port **patterns** (signaling, media cleanup, e2e); keep Hearth friend-centric surface.
 - **Why:** Angular monorepo scope ≠ Hearth product; months of wrong fit.
 
+### Signal host is shared [signaling] [p2p]
+
+- **Trigger:** Friends offline across machines while both “online” locally.
+- **Rule:** Every client’s `signal.host` must be the **same** reachable host (LAN IP or VPS). Local embed only covers same-PC / 127.0.0.1.
+- **Why:** PeerJS IDs and presence roster only meet on one signal process.
+
 ### Release gate [release]
 
 - **Trigger:** Version bump without checklist.

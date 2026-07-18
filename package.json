@@ -1,6 +1,6 @@
 {
   "name": "hearth",
-  "version": "4.4.0",
+  "version": "4.6.0",
   "description": "Hearth - P2P sesli sohbet, ekran ve dosya",
   "main": "main.js",
   "author": "Faruk",
@@ -11,6 +11,9 @@
   },
   "scripts": {
     "start": "electron .",
+    "signal": "node signal-server/index.js",
+    "dev": "electron .",
+    "postinstall": "node scripts/patch-deps.js",
     "pack": "electron-builder --win portable --x64",
     "setup": "electron-builder --win nsis --x64",
     "dist": "electron-builder --win portable nsis --x64",
@@ -33,7 +36,15 @@
       "public/**/*",
       "assets/**/*",
       "cloud/**/*",
+      "signal-server/**/*",
       "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "assets",
+        "to": "assets",
+        "filter": ["**/*"]
+      }
     ],
     "publish": [
       {
@@ -83,7 +94,10 @@
     "playwright": "^1.49.1"
   },
   "dependencies": {
-    "electron-updater": "^6.8.9"
+    "electron-updater": "^6.8.9",
+    "express": "^5.2.1",
+    "peer": "^1.0.2",
+    "ws": "^8.21.1"
   },
   "allowScripts": {
     "electron@33.4.11": true

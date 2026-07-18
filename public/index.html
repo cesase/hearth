@@ -81,12 +81,30 @@
             <summary id="status-summary" class="status-summary">
               <span id="status-summary-dot" class="status-dot online"></span>
               <span id="status-summary-label" data-i18n="statusOnline">Çevrimiçi</span>
+              <span class="status-chevron" aria-hidden="true">▾</span>
             </summary>
-            <div class="status-panel">
-              <label class="status-opt"><input type="radio" name="my-status" value="online" checked /> <span data-i18n="statusOnline">Çevrimiçi</span></label>
-              <label class="status-opt"><input type="radio" name="my-status" value="idle" /> <span data-i18n="statusIdle">Boşta</span></label>
-              <label class="status-opt"><input type="radio" name="my-status" value="dnd" /> <span data-i18n="statusDnd">Rahatsız etme</span></label>
-              <label class="status-opt"><input type="radio" name="my-status" value="invisible" /> <span data-i18n="statusInvisible">Görünmez</span></label>
+            <div class="status-panel" role="menu">
+              <label class="status-opt">
+                <input type="radio" name="my-status" value="online" checked />
+                <span class="status-dot online" aria-hidden="true"></span>
+                <span data-i18n="statusOnline">Çevrimiçi</span>
+              </label>
+              <label class="status-opt">
+                <input type="radio" name="my-status" value="idle" />
+                <span class="status-dot idle" aria-hidden="true"></span>
+                <span data-i18n="statusIdle">Boşta</span>
+              </label>
+              <label class="status-opt">
+                <input type="radio" name="my-status" value="dnd" />
+                <span class="status-dot dnd" aria-hidden="true"></span>
+                <span data-i18n="statusDnd">Rahatsız etme</span>
+              </label>
+              <label class="status-opt">
+                <input type="radio" name="my-status" value="invisible" />
+                <span class="status-dot invisible" aria-hidden="true"></span>
+                <span data-i18n="statusInvisible">Görünmez</span>
+              </label>
+              <div class="status-panel-divider"></div>
               <label class="status-text-label" data-i18n="statusText">Durum yazısı</label>
               <input id="my-status-text" type="text" maxlength="80" placeholder="…" />
             </div>
@@ -160,11 +178,8 @@
 
         <div id="media-dock" class="media-dock" hidden>
           <div class="media-toolbar">
-            <span id="call-timer" class="call-timer-pill">00:00</span>
+            <span id="call-timer" class="call-timer-pill" title="Görüşme süresi">00:00</span>
             <span id="call-members-label" class="call-members-label"></span>
-            <label class="media-size-label">Boyut
-              <input id="media-height" type="range" min="140" max="520" value="220" />
-            </label>
             <select id="media-layout" class="layout-select" title="Görünüm">
               <option value="both">Yan yana</option>
               <option value="remote">Sadece paylaşılan</option>
@@ -228,6 +243,17 @@
             </div>
           </div>
         </div>
+
+        <!-- media-dock DIŞINDA: sohbet ile arama arasında sürükle-boyutlandır -->
+        <div
+          id="media-splitter"
+          class="media-splitter"
+          hidden
+          title="Sürükleyerek arama / sohbet boyutunu ayarla"
+          role="separator"
+          aria-orientation="horizontal"
+          tabindex="0"
+        ></div>
 
         <div id="transfer-bar" class="transfer-bar" hidden>
           <div class="transfer-meta">
@@ -612,6 +638,7 @@
     <script src="vendor/supabase.js"></script>
     <script src="cloud/hearth-cloud.js"></script>
     <script src="vendor/peerjs.min.js"></script>
+    <script src="infrastructure/presence-client.js"></script>
     <script src="i18n-dict.js"></script>
     <script src="app.js"></script>
   </body>

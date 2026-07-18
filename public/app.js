@@ -125,7 +125,8 @@
     screenCursor: $("screen-cursor"),
     screenSystemAudio: $("screen-system-audio"),
     btnScreen: $("btn-screen"),
-    mediaHeight: $("media-height"),
+    mediaHeight: $("media-height"), // legacy (Boyut kaldırıldı; splitter kullan)
+    mediaSplitter: $("media-splitter"),
     mediaLayout: $("media-layout"),
     mediaVideos: $("media-videos"),
     btnFullscreenMedia: $("btn-fullscreen-media"),
@@ -295,6 +296,9 @@
   let friendRequests = [];
   let updateAvailableInfo = null;
   let prefs = { theme: "dark", language: "tr", timeFormat: "24", fontScale: 100 };
+  /** @type {any} signal server cfg from main */
+  let signalCfg = null;
+  let stopPresenceWs = null;
 
   // incoming file state
   let recvFile = null;
@@ -520,11 +524,6 @@
       if (opts[0]) opts[0].textContent = t("layoutBoth");
       if (opts[1]) opts[1].textContent = t("layoutRemote");
       if (opts[2]) opts[2].textContent = t("layoutLocal");
-    }
-    const sizeLab = document.querySelector(".media-size-label");
-    if (sizeLab) {
-      const txt = sizeLab.childNodes[0];
-      if (txt && txt.nodeType === 3) txt.textContent = t("size") + " ";
     }
     document.querySelectorAll(".groups-pane-header h3").forEach((h) => (h.textContent = t("groups")));
     document.querySelectorAll("[data-close]").forEach((b) => {
@@ -847,8 +846,15 @@
     el.transferFill.style.width = "0%";
   }
 
-  function setMediaHeight(h) {
-    const v = Math.max(140, Math.min(520, Number(h) || 220));
+  let mediaHeightPx = 220;
+
+  function setMediaHeight(h, { animate = false } = {}) {
+    const stage = el.stage || $("app-stage");
+    const stageH = stage ? stage.getBoundingClientRect().height : 700;
+    // Toolbar + kontroller ~140px; sohbete en az ~120px bırak
+    const maxV = Math.max(140, Math.min(560, Math.floor(stageH - 220)));
+    const v = Math.max(100, Math.min(maxV, Number(h) || 220));
+    mediaHeightPx = v;
     document.documentElement.style.setProperty("--media-h", v + "px");
     if (el.mediaDock) {
       el.mediaDock.style.setProperty("--media-h", v + "px");
@@ -857,11 +863,132 @@
     }
     const vids = el.mediaVideos || $("media-videos");
     if (vids) {
-      vids.style.height = v + "px";
-      vids.style.minHeight = v + "px";
-      vids.style.maxHeight = "none";
+      vids.style.transition = animate ? "height 0.12s ease" : "none";
+      // !important: CSS kuralları ezmesin
+      vids.style.setProperty("height", v + "px", "important");
+      vids.style.setProperty("min-height", v + "px", "important");
+      vids.style.setProperty("max-height", v + "px", "important");
     }
     if (el.mediaHeight) el.mediaHeight.value = String(v);
+    return v;
+  }
+
+  function syncMediaSplitterVisibility() {
+    const split = el.mediaSplitter || $("media-splitter");
+    if (!split) return;
+    const show = !!(el.mediaDock && !el.mediaDock.hidden);
+    if (show) {
+      split.removeAttribute("hidden");
+      split.hidden = false;
+      split.style.display = "block";
+    } else {
+      split.hidden = true;
+      split.setAttribute("hidden", "");
+      split.style.display = "none";
+    }
+  }
+
+  function setMediaDockVisible(visible) {
+    if (el.mediaDock) el.mediaDock.hidden = !visible;
+    syncMediaSplitterVisibility();
+    if (visible) setMediaHeight(mediaHeightPx || settings.mediaDockHeight || 220);
+  }
+
+  /** Discord-tarzı: medya paneli yüksekliğini sürükleyerek ayarla (mouse + touch) */
+  function wireMediaSplitter() {
+    const split = el.mediaSplitter || $("media-splitter");
+    if (!split || split._wired) return;
+    split._wired = true;
+    el.mediaSplitter = split;
+
+    let dragging = false;
+    let startY = 0;
+    let startH = 220;
+
+    const onMove = (clientY) => {
+      if (!dragging) return;
+      setMediaHeight(startH + (clientY - startY), { animate: false });
+    };
+
+    const onMouseMove = (e) => {
+      if (!dragging) return;
+      e.preventDefault();
+      onMove(e.clientY);
+    };
+
+    const onTouchMove = (e) => {
+      if (!dragging || !e.touches || !e.touches[0]) return;
+      e.preventDefault();
+      onMove(e.touches[0].clientY);
+    };
+
+    const endDrag = async () => {
+      if (!dragging) return;
+      dragging = false;
+      split.classList.remove("dragging");
+      document.body.classList.remove("resizing-media");
+      window.removeEventListener("mousemove", onMouseMove, true);
+      window.removeEventListener("mouseup", endDrag, true);
+      window.removeEventListener("touchmove", onTouchMove, { capture: true });
+      window.removeEventListener("touchend", endDrag, true);
+      window.removeEventListener("touchcancel", endDrag, true);
+      settings.mediaDockHeight = mediaHeightPx;
+      if (me) {
+        try {
+          await api.saveSettings(me.id, { mediaDockHeight: mediaHeightPx });
+        } catch {}
+      }
+    };
+
+    const startDrag = (clientY) => {
+      if (!el.mediaDock || el.mediaDock.hidden) return false;
+      dragging = true;
+      startY = clientY;
+      const vids = el.mediaVideos || $("media-videos");
+      startH = vids
+        ? Math.round(vids.getBoundingClientRect().height) || mediaHeightPx
+        : mediaHeightPx || settings.mediaDockHeight || 220;
+      split.classList.add("dragging");
+      document.body.classList.add("resizing-media");
+      window.addEventListener("mousemove", onMouseMove, true);
+      window.addEventListener("mouseup", endDrag, true);
+      window.addEventListener("touchmove", onTouchMove, { capture: true, passive: false });
+      window.addEventListener("touchend", endDrag, true);
+      window.addEventListener("touchcancel", endDrag, true);
+      return true;
+    };
+
+    // mousedown — en güvenilir masaüstü yolu
+    split.addEventListener("mousedown", (e) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      startDrag(e.clientY);
+    });
+    split.addEventListener(
+      "touchstart",
+      (e) => {
+        if (!e.touches || !e.touches[0]) return;
+        e.preventDefault();
+        startDrag(e.touches[0].clientY);
+      },
+      { passive: false }
+    );
+    // Klavye
+    split.addEventListener("keydown", async (e) => {
+      if (el.mediaDock?.hidden) return;
+      if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+        e.preventDefault();
+        const next = mediaHeightPx + (e.key === "ArrowUp" ? -16 : 16);
+        setMediaHeight(next, { animate: true });
+        settings.mediaDockHeight = mediaHeightPx;
+        if (me) {
+          try {
+            await api.saveSettings(me.id, { mediaDockHeight: mediaHeightPx });
+          } catch {}
+        }
+      }
+    });
   }
 
   function setChatExpanded(on) {
@@ -1937,12 +2064,15 @@
 
     if (msg.type === "missed-call") {
       const key = msg.groupId || username;
+      const fromU = msg.from || username;
+      const cooldownKey = `missed:${key}:in:${fromU}`;
+      if (!callEventAllowed(cooldownKey, 45000)) return;
       const m = {
         id: crypto.randomUUID(),
         type: "missed-call",
         kind: "missed-call",
-        text: `📞 Cevapsız çağrı ← @${msg.from || username}`,
-        from: msg.from || username,
+        text: `📞 Cevapsız çağrı ← @${fromU}`,
+        from: fromU,
         ts: msg.ts || Date.now(),
       };
       await persistAndShow(key, m, { show: chatKey() === key });
@@ -2164,6 +2294,74 @@
     }, 4000);
   }
 
+  function buildPeerOptions(myPid) {
+    const base = { debug: 0, config: ICE };
+    const s = signalCfg;
+    if (s && s.enabled !== false && s.host) {
+      return {
+        ...base,
+        host: s.host,
+        port: Number(s.port) || 9000,
+        path: s.peerPath || "/peerjs",
+        secure: !!s.secure,
+        // key not required for self-hosted peer
+      };
+    }
+    // Public PeerJS cloud (fallback)
+    return base;
+  }
+
+  function startSignalPresence() {
+    if (stopPresenceWs) {
+      try {
+        stopPresenceWs();
+      } catch {}
+      stopPresenceWs = null;
+    }
+    const s = signalCfg;
+    if (!s || s.enabled === false || !s.host || !window.HearthPresence) return;
+    const proto = s.secure ? "wss" : "ws";
+    const port = Number(s.port) || 9000;
+    const ppath = s.presencePath || "/presence";
+    const url = `${proto}://${s.host}:${port}${ppath}`;
+    stopPresenceWs = window.HearthPresence.connect({
+      url,
+      username: me.username,
+      displayName: me.displayName,
+      status: me.status || "online",
+      statusText: me.statusText || "",
+      onRoster: (roster) => {
+        for (const [un, meta] of roster) {
+          if (un === me.username) continue;
+          if (meta.status === "invisible" || meta.status === "offline") {
+            presence.set(un, "offline");
+          } else {
+            presence.set(un, "online");
+          }
+          const f = friends.find((x) => x.username === un);
+          if (f) {
+            f.remoteStatus = meta.status || "online";
+            f.statusText = meta.statusText || "";
+          }
+        }
+        // roster'da olmayan online'ları offline yapma — Peer bağlantısı da var
+        renderFriends();
+      },
+      onStatus: (msg) => {
+        if (!msg.username || msg.username === me.username) return;
+        const st = msg.status === "invisible" || msg.status === "offline" ? "offline" : "online";
+        presence.set(msg.username, st);
+        const f = friends.find((x) => x.username === msg.username);
+        if (f) {
+          f.remoteStatus = msg.status || "online";
+          f.statusText = msg.statusText || "";
+        }
+        renderFriends();
+        if (activeFriend === msg.username) setPeerHeader(f);
+      },
+    });
+  }
+
   async function startPeerNetwork() {
     if (peer) {
       try {
@@ -2175,12 +2373,21 @@
     const myPid = await peerIdOf(me.username);
     el.netStatus.textContent = "Ağa bağlanıyor…";
 
-    peer = new Peer(myPid, { debug: 0, config: ICE });
+    const peerOpts = buildPeerOptions(myPid);
+    const usingOwn = !!(signalCfg && signalCfg.enabled !== false && signalCfg.host);
+    peer = new Peer(myPid, peerOpts);
 
     peer.on("open", async (id) => {
-      el.netStatus.textContent = cloudMode ? "P2P + bulut hazır" : "Çevrimiçi ağı hazır";
+      el.netStatus.textContent = usingOwn
+        ? cloudMode
+          ? "Signal + bulut hazır"
+          : "Signal ağı hazır"
+        : cloudMode
+          ? "P2P + bulut hazır"
+          : "Çevrimiçi ağı hazır";
       for (const f of friends) tryConnect(f.username);
       startPresenceLoop();
+      startSignalPresence();
       if (cloudMode && window.HearthCloud?.isEnabled()) {
         try {
           await window.HearthCloud.updateProfile({ peerId: id });
@@ -2578,19 +2785,38 @@
   }
 
   // ---------- calls / screen ----------
+  /** @type {Map<string, number>} same chat/friend rate-limit for missed / end msgs */
+  const callEventCooldown = new Map();
+  function callEventAllowed(key, ms = 45000) {
+    const now = Date.now();
+    const prev = callEventCooldown.get(key) || 0;
+    if (now - prev < ms) return false;
+    callEventCooldown.set(key, now);
+    return true;
+  }
+
   function startCallTimer() {
     callStartedAt = Date.now();
     clearInterval(callTimerIv);
+    if (el.callTimer) el.callTimer.textContent = "00:00";
     callTimerIv = setInterval(() => {
       const s = Math.floor((Date.now() - callStartedAt) / 1000);
-      el.callTimer.textContent =
-        String(Math.floor(s / 60)).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0");
+      if (el.callTimer) {
+        el.callTimer.textContent =
+          String(Math.floor(s / 60)).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0");
+      }
     }, 500);
   }
 
   function stopCallTimer() {
     clearInterval(callTimerIv);
-    el.callTimer.textContent = "00:00";
+    callTimerIv = null;
+    if (el.callTimer) el.callTimer.textContent = "00:00";
+  }
+
+  function showRingingTimer() {
+    stopCallTimer();
+    if (el.callTimer) el.callTimer.textContent = "…";
   }
 
   /** Toju invariant: stop tracks + null srcObject so Chromium releases buffers */
@@ -2615,7 +2841,7 @@
   function endCallUi() {
     inCall = false;
     callWith = null;
-    el.mediaDock.hidden = true;
+    setMediaDockVisible(false);
     releaseMediaElement(el.remoteVideo);
     releaseMediaElement(el.localVideo);
     releaseMediaElement(el.remoteAudio);
@@ -2729,7 +2955,12 @@
     const friend = callWith;
     endCallUi();
     if (was && friend) setPresence(friend, conns.get(friend)?.open ? "online" : "offline");
-    if (was) renderMessage({ type: "system", text: "Görüşme sona erdi." });
+    if (was) {
+      const endKey = "end:" + (friend || activeFriend || activeGroupId || "x");
+      if (callEventAllowed(endKey, 8000)) {
+        renderMessage({ type: "system", text: t("callEnded") || "Görüşme sona erdi." });
+      }
+    }
   }
 
   function onMediaStream(stream, { isScreen = false, fromUser = null } = {}) {
@@ -2753,7 +2984,7 @@
     if (video.length) {
       el.remoteVideo.srcObject = new MediaStream(video);
       el.remotePh.hidden = true;
-      el.mediaDock.hidden = false;
+      setMediaDockVisible(true);
       if (el.fsRemote && !el.fsMedia.hidden) el.fsRemote.srcObject = el.remoteVideo.srcObject;
     }
   }
@@ -2764,11 +2995,12 @@
     inCall = true;
     callWith = friendUsername;
     setPresence(friendUsername, "busy");
-    el.mediaDock.hidden = false;
-    startCallTimer();
+    setMediaDockVisible(true);
     updateCallButtons();
     call.on("stream", (stream) => {
       stopRings();
+      // Timer yalnızca medya aktıktan sonra (aranıyor süresini sayma)
+      if (!callTimerIv) startCallTimer();
       onMediaStream(stream, { isScreen: false, fromUser: friendUsername });
     });
     call.on("close", () => {
@@ -2785,6 +3017,8 @@
   }
 
   async function appendMissedCall(targetKey, withUser, direction) {
+    const cooldownKey = `missed:${targetKey}:${direction}:${withUser}`;
+    if (!callEventAllowed(cooldownKey, 45000)) return false;
     const text =
       direction === "out"
         ? `📞 Cevapsız çağrı → @${withUser}`
@@ -2798,6 +3032,7 @@
       ts: Date.now(),
     };
     await persistAndShow(targetKey, m);
+    return true;
   }
 
   /** Giden arama: 30 sn zil UI (offline olsa bile), sonra cevapsız */
@@ -2805,14 +3040,14 @@
 
   function showOutgoingRingUI(label) {
     inCall = true;
-    el.mediaDock.hidden = false;
+    setMediaDockVisible(true);
     el.mediaDock.classList.add("outgoing-ring-ui");
     if (el.remotePh) {
       el.remotePh.hidden = false;
       el.remotePh.textContent = label || "Aranıyor…";
     }
     if (el.localPh) el.localPh.hidden = false;
-    startCallTimer();
+    showRingingTimer();
     updateCallButtons();
     playOutgoingRing();
   }
@@ -2829,7 +3064,7 @@
     inCall = false;
     el.mediaDock.classList.remove("outgoing-ring-ui");
     endCallUi();
-    await appendMissedCall(key, target, "out");
+    const added = await appendMissedCall(key, target, "out");
     sendTo(target, {
       type: "missed-call",
       from: me.username,
@@ -2837,11 +3072,18 @@
       groupId: groupId || null,
       ts: Date.now(),
     });
-    if (chatKey() === key) {
-      renderMessage({
-        type: "system",
-        text: reason === "cancel" ? "Arama iptal — cevapsız çağrı." : "Cevap yok — cevapsız çağrı.",
-      });
+    if (chatKey() === key && added) {
+      const reasonText =
+        reason === "cancel"
+          ? "Arama iptal edildi."
+          : reason === "offline" || reason === "no-data"
+            ? "Karşı taraf P2P’ye bağlı değil (signal/peer). Tek cevapsız kaydı."
+            : reason === "error" || reason === "fail"
+              ? "Arama kurulamadı (bağlantı hatası)."
+              : reason === "busy"
+                ? "Karşı taraf meşgul görünüyor."
+                : "Cevap yok — cevapsız çağrı.";
+      renderMessage({ type: "system", text: reasonText });
     }
   }
 
@@ -2853,21 +3095,26 @@
     if (!activeFriend || inCall) return;
     const target = activeFriend;
     const st = presence.get(target) || "offline";
-    const reachable = st !== "offline" && conns.get(target)?.open;
+    const dataOpen = !!(conns.get(target) && conns.get(target).open);
+    const reachable = st !== "offline" && dataOpen;
 
-    // Her durumda önce arama ekranı (çevrimiçi hissi)
     outboundRing = { target, groupId: null, answered: false, finished: false };
-    showOutgoingRingUI(`@${target} aranıyor…`);
+    let ringLabel = `@${target} aranıyor…`;
+    if (st === "busy") ringLabel = `@${target} meşgul — yine de aranıyor…`;
+    if (!dataOpen) ringLabel = `@${target} aranıyor… (P2P bağlantısı yok)`;
+    if (st === "offline") ringLabel = `@${target} çevrimdışı görünüyor…`;
+    showOutgoingRingUI(ringLabel);
 
     clearTimeout(callRingTimer);
+    const ringMs = reachable ? 30000 : 12000;
     callRingTimer = setTimeout(() => {
       if (outboundRing && !outboundRing.answered && !outboundRing.finished) {
-        finishOutboundAsMissed("timeout");
+        finishOutboundAsMissed(reachable ? "timeout" : dataOpen ? "busy" : "no-data");
       }
-    }, 30000);
+    }, ringMs);
 
     if (!reachable) {
-      // Offline: sadece zil UI; 30 sn veya iptal → cevapsız
+      // Data channel yoksa peer.call da genelde başarısız — kısa zil + net mesaj
       return;
     }
 
@@ -2887,6 +3134,7 @@
         stopRings();
         el.mediaDock.classList.remove("outgoing-ring-ui");
         bindMediaCall(call, target);
+        if (!callTimerIv) startCallTimer();
         onMediaStream(stream, { isScreen: false });
       });
       call.on("close", () => {
@@ -2914,8 +3162,8 @@
       playOutgoingRing();
       inCall = true;
       callWith = null;
-      el.mediaDock.hidden = false;
-      startCallTimer();
+      setMediaDockVisible(true);
+      showRingingTimer();
       updateCallButtons();
       if (el.callMembersLabel) el.callMembersLabel.textContent = g.members.join(", ");
 
@@ -2943,6 +3191,7 @@
             mediaCalls.set(member, call);
             call.on("stream", (s) => {
               stopRings();
+              if (!callTimerIv) startCallTimer();
               onMediaStream(s, { isScreen: false, fromUser: member });
             });
             call.on("close", () => {
@@ -3730,6 +3979,14 @@
     } else {
       me = await api.updateProfile(me.id, { status });
     }
+    if (window.HearthPresence) {
+      try {
+        window.HearthPresence.updateStatus({
+          status,
+          statusText: me.statusText || "",
+        });
+      } catch {}
+    }
     updateMyStatusDot();
     syncStatusSummary();
     await broadcastPresence();
@@ -3763,7 +4020,16 @@
         } else {
           me = await api.updateProfile(me.id, { statusText });
         }
+        if (window.HearthPresence) {
+          try {
+            window.HearthPresence.updateStatus({
+              status: me.status || "online",
+              statusText,
+            });
+          } catch {}
+        }
         updateMyStatusDot();
+        syncStatusSummary();
         await broadcastPresence();
       }, 400);
     });
@@ -3829,18 +4095,7 @@
   if (btnFileAcc) btnFileAcc.addEventListener("click", () => closeMediaOffer(true));
   if (btnFileRej) btnFileRej.addEventListener("click", () => closeMediaOffer(false));
 
-  if (el.mediaHeight) {
-    el.mediaHeight.addEventListener("input", async () => {
-      setMediaHeight(el.mediaHeight.value);
-      settings.mediaDockHeight = Number(el.mediaHeight.value);
-      if (me) await api.saveSettings(me.id, { mediaDockHeight: settings.mediaDockHeight });
-    });
-    el.mediaHeight.addEventListener("change", async () => {
-      setMediaHeight(el.mediaHeight.value);
-      settings.mediaDockHeight = Number(el.mediaHeight.value);
-      if (me) await api.saveSettings(me.id, { mediaDockHeight: settings.mediaDockHeight });
-    });
-  }
+  wireMediaSplitter();
 
   // Ekran paneli sağ tık — izleme modları
   function showVidCtx(x, y) {
@@ -4388,6 +4643,17 @@
   el.btnLogout.addEventListener("click", async () => {
     hangup();
     clearInterval(presenceTimer);
+    if (stopPresenceWs) {
+      try {
+        stopPresenceWs();
+      } catch {}
+      stopPresenceWs = null;
+    }
+    if (window.HearthPresence) {
+      try {
+        window.HearthPresence.disconnect();
+      } catch {}
+    }
     if (stopCloudPresence) {
       try {
         await stopCloudPresence();
@@ -4465,6 +4731,14 @@
   (async () => {
     try {
       const cfg = (await api.cloudConfig?.()) || { enabled: false };
+      // Own signal server (PeerJS host + presence WS). Defaults come from main.
+      if (cfg.signal && cfg.signal.enabled !== false) {
+        signalCfg = cfg.signal;
+      } else if (cfg.signal && cfg.signal.enabled === false) {
+        signalCfg = { enabled: false };
+      } else {
+        signalCfg = null;
+      }
       if (cfg.enabled && cfg.supabaseUrl && cfg.supabaseAnonKey && window.HearthCloud) {
         const res = await window.HearthCloud.init(cfg);
         cloudMode = !!(res && res.ok && window.HearthCloud.isEnabled());

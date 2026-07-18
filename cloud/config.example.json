@@ -2,5 +2,15 @@
   "enabled": true,
   "supabaseUrl": "https://PROJE_REF.supabase.co",
   "supabaseAnonKey": "sb_publishable_...veya_eyJhbGciOi...",
-  "note": "URL SADECE https://PROJE.supabase.co — sonunda /rest/v1/ OLMASIN (Data API sayfasından kopyalama). Key: Settings → API Keys → Publishable veya Legacy anon. Secret/service_role KOYMA."
+  "note": "URL SADECE https://PROJE.supabase.co — sonunda /rest/v1/ OLMASIN (Data API sayfasından kopyalama). Key: Settings → API Keys → Publishable veya Legacy anon. Secret/service_role KOYMA.",
+  "signal": {
+    "enabled": true,
+    "host": "127.0.0.1",
+    "port": 9000,
+    "secure": false,
+    "peerPath": "/peerjs",
+    "presencePath": "/presence",
+    "embed": true,
+    "note": "embed:true → Electron yerel signal açar (127.0.0.1). LAN/VPS için host=IP veya domain, embed:false, tüm arkadaşlar aynı host."
+  }
 }
