@@ -1,6 +1,6 @@
 {
   "name": "hearth",
-  "version": "4.7.1",
+  "version": "4.7.2",
   "description": "Hearth - P2P sesli sohbet, ekran ve dosya",
   "main": "main.js",
   "author": "Faruk",
@@ -25,6 +25,7 @@
   "build": {
     "appId": "com.hearth.app",
     "productName": "Hearth",
+    "npmRebuild": false,
     "directories": {
       "output": "dist"
     },
@@ -38,6 +39,9 @@
       "cloud/**/*",
       "signal-server/**/*",
       "package.json"
+    ],
+    "asarUnpack": [
+      "**/node_modules/uiohook-napi/**/*"
     ],
     "extraResources": [
       {
@@ -101,9 +105,11 @@
     "electron-updater": "^6.8.9",
     "express": "^5.2.1",
     "peer": "^1.0.2",
+    "uiohook-napi": "^1.5.5",
     "ws": "^8.21.1"
   },
   "allowScripts": {
-    "electron@33.4.11": true
+    "electron@33.4.11": true,
+    "uiohook-napi@1.5.5": true
   }
 }

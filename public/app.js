@@ -774,6 +774,8 @@
     return accel
       .replace(/CommandOrControl/g, "Ctrl")
       .replace(/Control/g, "Ctrl")
+      .replace(/Mouse4/g, "Mouse 4 (yan)")
+      .replace(/Mouse5/g, "Mouse 5 (yan)")
       .replace(/\+/g, " + ");
   }
 
@@ -786,9 +788,31 @@
     if (["Control", "Shift", "Alt", "Meta"].includes(k)) return null;
     let key = k.length === 1 ? k.toUpperCase() : k;
     if (key === " ") key = "Space";
+    // Browser back/forward keys sometimes surface as named keys
+    if (key === "BrowserBack" || key === "BrowserForward") {
+      key = key === "BrowserBack" ? "Mouse4" : "Mouse5";
+    }
     parts.push(key);
-    if (parts.length < 2 && !/^F\d+$/i.test(key)) return null; // en az modifier veya F tuşu
-    if (/^F\d+$/i.test(key) && parts.length === 1) return key;
+    // Mouse4/5 veya F-tuşu tek başına yeterli; diğer harfler en az bir modifier ister
+    if (/^Mouse[45]$/i.test(key) || /^F\d+$/i.test(key)) {
+      return parts.length === 1 ? key : parts.join("+");
+    }
+    if (parts.length < 2) return null;
+    return parts.join("+");
+  }
+
+  /** Mouse yan tuşları: button 3 = Mouse4 (geri), button 4 = Mouse5 (ileri) */
+  function mouseEventToAccel(e) {
+    // DOM: 0 left, 1 middle, 2 right, 3 back (X1), 4 forward (X2)
+    let mouseKey = null;
+    if (e.button === 3) mouseKey = "Mouse4";
+    else if (e.button === 4) mouseKey = "Mouse5";
+    if (!mouseKey) return null;
+    const parts = [];
+    if (e.ctrlKey || e.metaKey) parts.push("CommandOrControl");
+    if (e.altKey) parts.push("Alt");
+    if (e.shiftKey) parts.push("Shift");
+    parts.push(mouseKey);
     return parts.join("+");
   }
 
@@ -1066,8 +1090,9 @@
     el.btnHangup.hidden = !inCall;
     if (el.btnHangupBar) el.btnHangupBar.hidden = !inCall;
     el.btnFile.disabled = false;
-    // Zil sırasında ekran paylaşımı yok (Fable 5 §2.6)
-    if (el.btnScreen) el.btnScreen.disabled = !inCall || !!outboundRing;
+    // Yalnızca giden zil (henüz bağlanmadı) sırasında ekran paylaşımı kapalı
+    const ringingOut = !!(outboundRing && !outboundRing.answered && !outboundRing.finished);
+    if (el.btnScreen) el.btnScreen.disabled = !inCall || ringingOut;
     setScreenBtnUi();
     el.chatInput.disabled = false;
     el.btnSend.disabled = false;
@@ -3371,13 +3396,18 @@
       mediaCall = call;
       callWith = target;
       call.on("stream", (stream) => {
-        if (outboundRing) outboundRing.answered = true;
+        if (outboundRing) {
+          outboundRing.answered = true;
+          outboundRing.finished = true;
+          outboundRing = null; // bağlandı — ekran paylaş ve diğer UI kilitlerini aç
+        }
         clearTimeout(callRingTimer);
         stopRings();
         el.mediaDock.classList.remove("outgoing-ring-ui");
         bindMediaCall(call, target);
         if (!callTimerIv) startCallTimer();
         onMediaStream(stream, { isScreen: false });
+        updateCallButtons();
       });
       call.on("close", () => {
         if (outboundRing && !outboundRing.answered && !outboundRing.finished) {
@@ -3524,6 +3554,7 @@
       clearTimeout(incomingRingTimer);
       incomingRingTimer = null;
       stopRings();
+      outboundRing = null;
       const stream = await ensureMicGraph();
       const friend = callWith;
       const groupId = incomingCall.metadata && incomingCall.metadata.groupId;
@@ -3535,6 +3566,7 @@
         activeGroupId = groupId;
         await meshJoinGroupCall(groupId, friend);
       }
+      updateCallButtons();
       renderMessage({ type: "system", text: t("callOpened") });
     } catch {
       rejectCall();
@@ -3614,55 +3646,74 @@
     for (const u of mediaCalls.keys()) {
       if (!targets.includes(u)) targets.push(u);
     }
-    if (!inCall || !targets.length) return;
+    // Bağlı görüşme yoksa paylaşma
+    if ((!inCall && !mediaCall && !mediaCalls.size) || !targets.length) {
+      renderMessage({
+        type: "system",
+        text: t("screenNeedCall") || "Ekran paylaşımı için önce görüşmede olmalısın.",
+      });
+      return;
+    }
     if (screenStream) {
       stopScreen();
       return;
     }
-    const sources = await api.pickScreenSources();
+    let sources = [];
+    try {
+      sources = await api.pickScreenSources();
+    } catch (e) {
+      renderMessage({ type: "system", text: t("screenFailed") + ": " + (e.message || e) });
+      return;
+    }
+    if (!sources || !sources.length) {
+      renderMessage({ type: "system", text: t("screenFailed") + ": no sources" });
+      return;
+    }
     el.screenList.innerHTML = "";
     sources.forEach((s) => {
       const b = document.createElement("button");
       b.type = "button";
       b.className = "screen-item";
-      b.innerHTML = `<img alt=""/><span></span>`;
-      b.querySelector("img").src = s.thumbnail;
-      b.querySelector("span").textContent = s.name;
+      const img = document.createElement("img");
+      img.alt = "";
+      img.src = s.thumbnail || "";
+      const span = document.createElement("span");
+      span.textContent = s.name || s.id;
+      b.appendChild(img);
+      b.appendChild(span);
       b.addEventListener("click", async () => {
         el.modalScreen.hidden = true;
         try {
           await api.setScreenSource(s.id);
-          const q = el.screenQuality.value;
-          const fps = Number(el.screenFps.value) || 30;
-          const showCursor = !!(el.screenCursor && el.screenCursor.checked);
-          const video = qualityConstraints(q, fps);
+          // Kaynak seçimi ile handler arasında kısa gecikme (Electron race)
+          await new Promise((r) => setTimeout(r, 50));
 
+          const q = el.screenQuality ? el.screenQuality.value : "1080p";
+          const fps = Number(el.screenFps && el.screenFps.value) || 30;
+          const video = qualityConstraints(q, fps);
           const wantSysAudio = !!(el.screenSystemAudio && el.screenSystemAudio.checked);
-          // Electron: audio:true → main handler WASAPI loopback
+
+          // 1) Basit constraints — en yüksek başarı oranı
           try {
             screenStream = await navigator.mediaDevices.getDisplayMedia({
-              video: {
-                width: video.width,
-                height: video.height,
-                frameRate: video.frameRate,
-              },
+              video: true,
               audio: !!wantSysAudio,
             });
           } catch (err1) {
             if (wantSysAudio) {
               console.warn("Sesli ekran başarısız, sadece video:", err1);
               screenStream = await navigator.mediaDevices.getDisplayMedia({
-                video: {
-                  width: video.width,
-                  height: video.height,
-                  frameRate: video.frameRate,
-                },
+                video: true,
                 audio: false,
               });
               renderMessage({ type: "system", text: t("screenNoAudio") });
             } else {
               throw err1;
             }
+          }
+
+          if (!screenStream || !screenStream.getVideoTracks().length) {
+            throw new Error("No video track from getDisplayMedia");
           }
 
           if (!wantSysAudio) {
@@ -3689,8 +3740,8 @@
             } catch {}
           });
 
-          // PeerJS renegotiation yok: track'ler EN BAŞTA stream'de olmalı; tek kind:screen call
           const audioTracks = screenStream.getAudioTracks().filter((t) => t.readyState === "live");
+          // Tek MediaStream, tek call — PeerJS renegotiation yok
           const fullStream = new MediaStream([
             ...screenStream.getVideoTracks(),
             ...audioTracks,
@@ -3718,8 +3769,11 @@
 
           el.localVideo.srcObject = new MediaStream(screenStream.getVideoTracks());
           el.localPh.hidden = true;
-          if (el.fsLocal && !el.fsMedia.hidden) el.fsLocal.srcObject = el.localVideo.srcObject;
+          if (el.fsLocal && el.fsMedia && !el.fsMedia.hidden) {
+            el.fsLocal.srcObject = el.localVideo.srcObject;
+          }
           setScreenBtnUi();
+          updateCallButtons();
           track.onended = () => stopScreen();
           const hasAudio = audioTracks.length > 0;
           renderMessage({
@@ -3731,11 +3785,19 @@
                 : t("screenSharing"),
           });
         } catch (err) {
+          if (screenStream) {
+            try {
+              screenStream.getTracks().forEach((t) => t.stop());
+            } catch {}
+            screenStream = null;
+          }
           renderMessage({
             type: "system",
             text: t("screenFailed") + ": " + (err.message || err),
           });
           console.error(err);
+          setScreenBtnUi();
+          updateCallButtons();
         }
       });
       el.screenList.appendChild(b);
@@ -4783,14 +4845,14 @@
   el.setHotkey.addEventListener("click", () => {
     capturingHotkey = true;
     capturingWhich = "mic";
-    el.setHotkey.value = "Tuşlara bas…";
+    el.setHotkey.value = t("pressKeys") || "Tuş veya Mouse 4/5 bas…";
   });
 
   if (el.setDeafenHotkey) {
     el.setDeafenHotkey.addEventListener("click", () => {
       capturingHotkey = true;
       capturingWhich = "deafen";
-      el.setDeafenHotkey.value = "Tuşlara bas…";
+      el.setDeafenHotkey.value = t("pressKeys") || "Tuş veya Mouse 4/5 bas…";
     });
   }
 
@@ -4808,22 +4870,50 @@
     });
   }
 
+  function applyCapturedAccel(accel) {
+    if (!accel) return;
+    if (capturingWhich === "deafen" && el.setDeafenHotkey) {
+      el.setDeafenHotkey.dataset.accel = accel;
+      el.setDeafenHotkey.value = accelToLabel(accel);
+    } else if (el.setHotkey) {
+      el.setHotkey.dataset.accel = accel;
+      el.setHotkey.value = accelToLabel(accel);
+    }
+    capturingHotkey = false;
+  }
+
   window.addEventListener(
     "keydown",
     (e) => {
       if (!capturingHotkey) return;
       e.preventDefault();
       e.stopPropagation();
-      const accel = eventToAccel(e);
-      if (!accel) return;
-      if (capturingWhich === "deafen" && el.setDeafenHotkey) {
-        el.setDeafenHotkey.dataset.accel = accel;
-        el.setDeafenHotkey.value = accelToLabel(accel);
-      } else {
-        el.setHotkey.dataset.accel = accel;
-        el.setHotkey.value = accelToLabel(accel);
-      }
-      capturingHotkey = false;
+      applyCapturedAccel(eventToAccel(e));
+    },
+    true
+  );
+
+  // Mouse 4 / 5 (yan makro tuşlar) — keydown gelmez, mousedown gerekir
+  window.addEventListener(
+    "mousedown",
+    (e) => {
+      if (!capturingHotkey) return;
+      if (e.button !== 3 && e.button !== 4) return;
+      e.preventDefault();
+      e.stopPropagation();
+      applyCapturedAccel(mouseEventToAccel(e));
+    },
+    true
+  );
+  // Bazı sürücüler auxclick üretir
+  window.addEventListener(
+    "auxclick",
+    (e) => {
+      if (!capturingHotkey) return;
+      if (e.button !== 3 && e.button !== 4) return;
+      e.preventDefault();
+      e.stopPropagation();
+      applyCapturedAccel(mouseEventToAccel(e));
     },
     true
   );

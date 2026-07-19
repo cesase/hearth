@@ -469,30 +469,34 @@ function createTray() {
   });
 }
 
-function registerShortcutsForUser(userId) {
+const hotkeys = require("./main/hotkeys");
+
+function sendHotkey(channel) {
+  // Oyun fullscreen olsa bile webContents ayakta kalsın (pencere gizli/tray OK)
   try {
-    globalShortcut.unregisterAll();
-  } catch {}
-  if (!userId) return;
+    if (win && !win.isDestroyed() && win.webContents && !win.webContents.isDestroyed()) {
+      win.webContents.send(channel);
+    }
+  } catch (e) {
+    console.warn("hotkey send", channel, e.message);
+  }
+}
+
+function registerShortcutsForUser(userId) {
+  if (!userId) {
+    hotkeys.unregisterAll();
+    return;
+  }
   const s = storage.getSettings(userId);
   const mic = s.micHotkey || "CommandOrControl+Shift+M";
   const deaf = s.deafenHotkey || "CommandOrControl+Shift+D";
-  try {
-    globalShortcut.register(mic, () => {
-      if (win) win.webContents.send("hotkey-mic");
-    });
-  } catch (e) {
-    console.warn("Mic kısayol:", mic, e.message);
-  }
-  try {
-    if (deaf && deaf !== mic) {
-      globalShortcut.register(deaf, () => {
-        if (win) win.webContents.send("hotkey-deafen");
-      });
-    }
-  } catch (e) {
-    console.warn("Deafen kısayol:", deaf, e.message);
-  }
+  hotkeys.registerShortcuts({
+    mic,
+    deaf,
+    onMic: () => sendHotkey("hotkey-mic"),
+    onDeaf: () => sendHotkey("hotkey-deafen"),
+  });
+  devLog("hotkeys registered", mic, deaf);
 }
 
 // Windows: görev çubuğu kimliği — app ready ÖNCESİ set edilmeli
@@ -544,8 +548,20 @@ app.whenReady().then(async () => {
 
 app.on("will-quit", () => {
   try {
+    hotkeys.dispose();
+  } catch {}
+  try {
     globalShortcut.unregisterAll();
   } catch {}
+});
+
+// Oyun / başka app odak alınca kısayolları taze kaydet (bazı durumlar un-register eder)
+app.on("browser-window-blur", () => {
+  if (currentUserId) {
+    try {
+      registerShortcutsForUser(currentUserId);
+    } catch {}
+  }
 });
 
 // ---- Auth ----

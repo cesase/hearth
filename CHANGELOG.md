@@ -1,5 +1,14 @@
 # Changelog
 
+## 4.7.2
+
+### Screen share unlock + global hotkeys + Mouse4
+
+- **Screen share button stuck:** cleared `outboundRing` after call connects; button no longer stays disabled during active call
+- **getDisplayMedia** simplified (`video: true`) for higher capture success
+- **Global hotkeys:** `main/hotkeys.js` — Electron `globalShortcut` + `uiohook-napi` backup so mic/deafen work while a fullscreen game has focus; re-register on window blur
+- **Mouse 4 / 5:** capturable in settings (mousedown/auxclick); registered via uiohook globally
+
 ## 4.7.1
 
 ### Fable 5 fix plan (critical bugs)
