@@ -2427,6 +2427,19 @@ html body { font-size: calc(var(--fs-body) * var(--font-scale)); }
 }
 .msg .msg-line {
   line-height: 1.45;
+  word-break: break-word;
+}
+.chat-link {
+  color: #7aa2ff;
+  text-decoration: underline;
+  cursor: pointer;
+  word-break: break-all;
+}
+.chat-link:hover {
+  color: #a8c0ff;
+}
+.msg.mine .chat-link {
+  color: #dce6ff;
 }
 .msg.grouped {
   display: none !important; /* append into host instead */

@@ -540,10 +540,31 @@
       tf.options[0].textContent = t("time24");
       tf.options[1].textContent = t("time12");
     }
+    // Ctrl labels Mic/Deaf/Noise/Share/End
+    document.querySelectorAll("#btn-mic .ctrl-label").forEach((n) => (n.textContent = t("mic")));
+    document.querySelectorAll("#btn-deafen .ctrl-label").forEach((n) => (n.textContent = t("deaf")));
+    document.querySelectorAll("#btn-noise .ctrl-label").forEach((n) => (n.textContent = t("noise")));
+    document.querySelectorAll("#btn-screen .ctrl-label").forEach((n) => (n.textContent = t("share")));
+    document.querySelectorAll("#btn-hangup-bar .ctrl-label").forEach((n) => (n.textContent = t("end")));
+    // Chat empty state
+    const emptyP = el.chatEmpty && el.chatEmpty.querySelector("p");
+    const emptyS = el.chatEmpty && el.chatEmpty.querySelector("small");
+    if (emptyP) emptyP.textContent = t("emptyChat");
+    if (emptyS) emptyS.textContent = t("emptyChatHint");
+    const ge = $("group-empty");
+    if (ge) {
+      const gp = ge.querySelector("p");
+      const gs = ge.querySelector("small");
+      if (gp) gp.textContent = t("noGroups");
+      if (gs) gs.textContent = t("groupEmptyHint");
+    }
+    if (el.btnCall) el.btnCall.textContent = "📞 " + t("call");
+    if (el.btnHangup) el.btnHangup.textContent = t("hangup");
     syncStatusSummary();
     renderFriends();
     renderFriendRequests();
     renderGroups();
+    setScreenBtnUi();
   }
 
   function formatMsgTime(ts) {
@@ -712,11 +733,11 @@
   function statusLabel(st) {
     return (
       {
-        online: "🟢 Çevrimiçi",
-        idle: "🌙 Boşta",
-        dnd: "⛔ Rahatsız etme",
-        invisible: "⚫ Görünmez",
-      }[st] || "🟢 Çevrimiçi"
+        online: "🟢 " + t("statusOnline"),
+        idle: "🌙 " + t("statusIdle"),
+        dnd: "⛔ " + t("statusDnd"),
+        invisible: "⚫ " + t("statusInvisible"),
+      }[st] || "🟢 " + t("statusOnline")
     );
   }
 
@@ -1002,8 +1023,8 @@
 
   function setPeerHeader(friend) {
     if (!friend) {
-      el.peerTitle.textContent = "Bir arkadaş seç";
-      el.peerSub.textContent = "Soldan birine tıkla veya arkadaş ekle";
+      el.peerTitle.textContent = t("pickChat");
+      el.peerSub.textContent = t("pickChatHint");
       el.stageActions.hidden = true;
       el.peerAvatar.textContent = "?";
       el.peerAvatar.innerHTML = "?";
@@ -1012,7 +1033,11 @@
     el.peerTitle.textContent = friend.displayName || friend.username;
     const st = presence.get(friend.username) || "offline";
     el.peerSub.textContent =
-      st === "online" ? "Çevrimiçi" : st === "busy" ? "Görüşmede" : "Çevrimdışı";
+      st === "online"
+        ? t("online")
+        : st === "busy"
+          ? t("busy")
+          : t("offline");
     el.stageActions.hidden = false;
     el.remoteTag.textContent = friend.displayName || friend.username;
     const av = remoteAvatars.get(friend.username);
@@ -1337,6 +1362,77 @@
     if (force || nearBottom) box.scrollTop = box.scrollHeight;
   }
 
+  /** http(s) URL'leri tıklanabilir yap; tıklanınca onay kutusu */
+  const URL_RE = /((?:https?:\/\/|www\.)[^\s<>"']+[^\s<>"'.,;:!?)\]])/gi;
+
+  function normalizeHref(raw) {
+    let u = String(raw || "").trim();
+    if (!u) return "";
+    if (/^www\./i.test(u)) u = "https://" + u;
+    if (!/^https?:\/\//i.test(u)) return "";
+    try {
+      const parsed = new URL(u);
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return "";
+      return parsed.href;
+    } catch {
+      return "";
+    }
+  }
+
+  async function confirmAndOpenLink(url) {
+    const href = normalizeHref(url);
+    if (!href) return;
+    const msg = `${t("openLinkConfirm")}\n\n${href}`;
+    const ok = window.confirm(msg);
+    if (!ok) return;
+    try {
+      if (api.openExternal) {
+        const res = await api.openExternal(href);
+        if (res && res.ok === false) throw new Error(res.error || "open failed");
+      } else {
+        window.open(href, "_blank", "noopener,noreferrer");
+      }
+    } catch (e) {
+      console.warn("open link", e);
+      alert(e.message || String(e));
+    }
+  }
+
+  function fillTextWithLinks(elNode, text) {
+    const raw = String(text || "");
+    elNode.textContent = "";
+    if (!raw) return;
+    let last = 0;
+    const re = new RegExp(URL_RE.source, "gi");
+    let match;
+    while ((match = re.exec(raw)) !== null) {
+      if (match.index > last) {
+        elNode.appendChild(document.createTextNode(raw.slice(last, match.index)));
+      }
+      const rawUrl = match[0];
+      const href = normalizeHref(rawUrl);
+      if (href) {
+        const a = document.createElement("a");
+        a.className = "chat-link";
+        a.href = href;
+        a.textContent = rawUrl;
+        a.rel = "noopener noreferrer";
+        a.addEventListener("click", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          confirmAndOpenLink(href);
+        });
+        elNode.appendChild(a);
+      } else {
+        elNode.appendChild(document.createTextNode(rawUrl));
+      }
+      last = match.index + rawUrl.length;
+    }
+    if (last < raw.length) {
+      elNode.appendChild(document.createTextNode(raw.slice(last)));
+    }
+  }
+
   function appendMsgBodyContent(container, m) {
     if (m.kind === "gif" && m.url) {
       const img = document.createElement("img");
@@ -1357,18 +1453,18 @@
           const img = document.createElement("img");
           img.className = "preview";
           img.src = m.previewUrl;
-          img.alt = m.name || "medya";
+          img.alt = m.name || "media";
           container.appendChild(img);
         }
       } else {
-        container.appendChild(document.createTextNode(`📎 ${m.name || "medya"}`));
+        container.appendChild(document.createTextNode(`📎 ${m.name || "media"}`));
       }
     } else if (m.kind === "file") {
       container.appendChild(document.createTextNode(`📎 ${m.name} (${fmtSize(m.size || 0)})`));
     } else {
       const body = document.createElement("div");
       body.className = "msg-line";
-      body.textContent = m.text || "";
+      fillTextWithLinks(body, m.text || "");
       container.appendChild(body);
     }
     const time = document.createElement("span");
@@ -1391,7 +1487,7 @@
         const line = document.createElement("div");
         line.className = "msg-line";
         line.dataset.mid = m.id || "";
-        line.textContent = m.text || "";
+        fillTextWithLinks(line, m.text || "");
         const time = document.createElement("span");
         time.className = "time";
         time.textContent = formatMsgTime(m.ts);
@@ -1418,7 +1514,7 @@
       div.textContent = m.text;
     } else if (m.deleted || m.kind === "deleted") {
       div.className = "msg deleted" + (m.from === me.username ? " mine" : "");
-      div.textContent = "Mesaj silindi";
+      div.textContent = t("msgDeleted");
     } else {
       const mine = m.from === me.username;
       div.className =
@@ -1450,7 +1546,7 @@
         } else {
           av.textContent = letter;
         }
-        av.title = "Profili aç";
+        av.title = t("openProfile");
         av.addEventListener("click", () => openProfile(mine ? me.username : m.from, mine));
         const who = document.createElement("span");
         who.className = "who";
@@ -1571,21 +1667,25 @@
       if (ed) ed.hidden = true;
       if (saveBtn) saveBtn.hidden = true;
       if (el.btnProfileEdit) el.btnProfileEdit.hidden = true;
-      el.profileAbout.textContent = data.about || "Henüz bir bio yok.";
+      el.profileAbout.textContent = data.about || t("noBio");
       el.profileSocials.innerHTML = "";
       const socials = data.socials || {};
       for (const [k, v] of Object.entries(socials)) {
         if (!v) continue;
         const li = document.createElement("li");
         const a = document.createElement("a");
-        a.href = v;
+        a.href = "#";
+        a.className = "chat-link";
         a.textContent = k + ": " + v;
-        a.target = "_blank";
+        a.addEventListener("click", (e) => {
+          e.preventDefault();
+          confirmAndOpenLink(v.startsWith("http") ? v : "https://" + v);
+        });
         li.appendChild(a);
         el.profileSocials.appendChild(li);
       }
       if (!el.profileSocials.children.length) {
-        el.profileSocials.innerHTML = "<li>Bağlantı yok</li>";
+        el.profileSocials.innerHTML = `<li>${t("noLinks")}</li>`;
       }
     }
     el.modalProfile.hidden = false;
@@ -1594,7 +1694,7 @@
   async function editMessage(m) {
     const key = chatKey();
     if (!key) return;
-    const next = prompt("Mesajı düzenle:", m.text || "");
+    const next = prompt(t("msgEditPrompt"), m.text || "");
     if (next == null) return;
     const text = next.trim();
     if (!text) return;
@@ -1608,7 +1708,7 @@
   async function deleteMessage(m) {
     const key = chatKey();
     if (!key) return;
-    if (!confirm("Mesaj silinsin mi?")) return;
+    if (!confirm(t("msgDeleteConfirm"))) return;
     await api.deleteChat(me.id, key, m.id);
     for (const u of recipientsForChat()) {
       sendTo(u, { type: "chat-delete", id: m.id, groupId: activeGroupId });
@@ -1643,7 +1743,7 @@
       pins = pins.filter((p) => p.id !== m.id);
       await api.setPins(me.id, key, pins);
       renderPins(pins);
-      renderMessage({ type: "system", text: "Sabitleme kaldırıldı." });
+      renderMessage({ type: "system", text: t("pinRemoved") });
       return;
     }
     pins.unshift({
@@ -1865,14 +1965,14 @@
       "🖥️",
       "Share",
       "icon-ctrl" + (screenStream ? " active-mic" : ""),
-      screenStream ? "Paylaşımı durdur" : "Ekran paylaş"
+      screenStream ? t("screenShareStop") : t("screenShareStart")
     );
   }
 
   function toggleMic() {
     if (deafened) {
       // Deafen açıkken mic zaten kapalı; kullanıcı açmaya çalışırsa uyar
-      renderMessage({ type: "system", text: "Deafen açıkken mikrofon kapalı kalır. Önce deafen kapat." });
+      renderMessage({ type: "system", text: t("deafenBlocksMic") });
       return;
     }
     micOn = !micOn;
@@ -2172,7 +2272,7 @@
       if (!ok) {
         sendTo(username, { type: "file-abort", id: msg.id });
         if (activeFriend === username) {
-          renderMessage({ type: "system", text: `Dosya reddedildi: ${msg.name}` });
+          renderMessage({ type: "system", text: `${t("fileDeclined")}: ${msg.name}` });
         }
         return;
       }
@@ -2259,7 +2359,7 @@
       }
       hideTransfer();
       if (activeFriend === username) {
-        renderMessage({ type: "system", text: "Dosya aktarımı iptal edildi." });
+        renderMessage({ type: "system", text: t("fileTransferAbort") });
       }
       window.dispatchEvent(new CustomEvent("file-abort", { detail: msg }));
       return;
@@ -2371,7 +2471,7 @@
     }
     conns.clear();
     const myPid = await peerIdOf(me.username);
-    el.netStatus.textContent = "Ağa bağlanıyor…";
+    el.netStatus.textContent = t("netConnecting");
 
     const peerOpts = buildPeerOptions(myPid);
     const usingOwn = !!(signalCfg && signalCfg.enabled !== false && signalCfg.host);
@@ -2380,11 +2480,11 @@
     peer.on("open", async (id) => {
       el.netStatus.textContent = usingOwn
         ? cloudMode
-          ? "Signal + bulut hazır"
-          : "Signal ağı hazır"
+          ? t("netSignalCloud")
+          : t("netSignal")
         : cloudMode
-          ? "P2P + bulut hazır"
-          : "Çevrimiçi ağı hazır";
+          ? t("netP2pCloud")
+          : t("netOnline");
       for (const f of friends) tryConnect(f.username);
       startPresenceLoop();
       startSignalPresence();
@@ -2473,23 +2573,36 @@
       const kind = (call.metadata && call.metadata.kind) || "audio";
       const groupId = call.metadata && call.metadata.groupId;
 
-      if (kind === "screen") {
+      if (kind === "screen" || kind === "screen-audio") {
         call.answer(); // alıcı stream göndermez
         call.on("stream", (stream) => {
-          // Video + loopback ses ayrı elemanlara
+          // Video + loopback ses (veya ayrı screen-audio call)
           onMediaStream(stream, { isScreen: true, fromUser });
           const atracks = stream.getAudioTracks();
           if (atracks.length && el.remoteScreenAudio) {
-            el.remoteScreenAudio.srcObject = new MediaStream(atracks);
+            // Mevcut ses track'lerini birleştir (ayrı call gelirse)
+            try {
+              const prev = el.remoteScreenAudio.srcObject;
+              const merged = new MediaStream([
+                ...(prev && typeof prev.getAudioTracks === "function" ? prev.getAudioTracks() : []),
+                ...atracks,
+              ]);
+              el.remoteScreenAudio.srcObject = merged;
+            } catch {
+              el.remoteScreenAudio.srcObject = new MediaStream(atracks);
+            }
             el.remoteScreenAudio.muted = !!deafened;
             el.remoteScreenAudio.volume = Math.min(1, (settings.screenAudioVolume ?? 100) / 100);
             el.remoteScreenAudio.play().catch(() => {});
           }
         });
         call.on("close", () => {
-          el.remoteVideo.srcObject = null;
-          el.remotePh.hidden = false;
-          if (el.remoteScreenAudio) el.remoteScreenAudio.srcObject = null;
+          if (kind === "screen") {
+            el.remoteVideo.srcObject = null;
+            el.remotePh.hidden = false;
+          }
+          // screen-audio kapanınca sesi temizle; screen kapanınca da
+          if (el.remoteScreenAudio && kind === "screen") el.remoteScreenAudio.srcObject = null;
         });
         return;
       }
@@ -2521,15 +2634,15 @@
       if (groupId) activeGroupId = groupId;
       el.incomingBar.hidden = false;
       el.incomingText.textContent = groupId
-        ? `${fromUser} grup araması…`
-        : `${fromUser} arıyor…`;
+        ? `${fromUser} ${t("groupIncoming")}`
+        : `${fromUser} ${t("incomingCall")}`;
       playIncomingRing();
       api.notifyIncoming();
       if (!groupId && activeFriend !== fromUser) openFriend(fromUser);
     });
 
     peer.on("disconnected", () => {
-      el.netStatus.textContent = "Kopuk — yeniden…";
+      el.netStatus.textContent = t("netReconnecting");
       try {
         peer.reconnect();
       } catch {}
@@ -2538,7 +2651,7 @@
     peer.on("error", (err) => {
       if (err.type === "peer-unavailable") return;
       if (err.type === "unavailable-id") {
-        el.netStatus.textContent = "Kimlik meşgul (program iki kez açık?)";
+        el.netStatus.textContent = t("netIdBusy");
       }
     });
   }
@@ -2596,7 +2709,7 @@
         any = true;
     }
     if (!any && recipientsForChat().length) {
-      renderMessage({ type: "system", text: "Mesaj yerel kaydedildi; alıcılar çevrimdışı olabilir." });
+      renderMessage({ type: "system", text: t("msgSavedOffline") });
     }
     replyTo = null;
     el.chatInput.placeholder = "Mesaj yaz…";
@@ -3149,7 +3262,7 @@
       stopRings();
       outboundRing = null;
       endCallUi();
-      renderMessage({ type: "system", text: "Mikrofon izni gerekli." });
+      renderMessage({ type: "system", text: t("micNeeded") });
     }
   }
 
@@ -3208,13 +3321,16 @@
       if (!mediaCalls.size) {
         stopRings();
         hangup();
-        renderMessage({ type: "system", text: "Grupta çevrimiçi kimse yok." });
+        renderMessage({ type: "system", text: t("groupEmpty") });
       } else {
-        renderMessage({ type: "system", text: `Grup aranıyor (${mediaCalls.size} kişi)…` });
+        renderMessage({
+          type: "system",
+          text: `${t("groupCalling")} (${mediaCalls.size})…`,
+        });
       }
     } catch {
       stopRings();
-      renderMessage({ type: "system", text: "Mikrofon izni gerekli." });
+      renderMessage({ type: "system", text: t("micNeeded") });
     }
   }
 
@@ -3260,7 +3376,7 @@
       renderFriends();
       renderGroups();
       await openGroup(g.id);
-      renderMessage({ type: "system", text: "Grup odası oluşturuldu — aranıyor…" });
+      renderMessage({ type: "system", text: t("groupCreatedCalling") });
       await startGroupCall(g);
     } catch (e) {
       alert(e.message || String(e));
@@ -3282,7 +3398,7 @@
         activeGroupId = groupId;
         await meshJoinGroupCall(groupId, friend);
       }
-      renderMessage({ type: "system", text: "Arama açıldı." });
+      renderMessage({ type: "system", text: t("callOpened") });
     } catch {
       rejectCall();
     }
@@ -3327,6 +3443,55 @@
     if (q === "720p") return 2_500_000;
     if (q === "lossless") return 8_000_000;
     return 4_500_000;
+  }
+
+  function ensureAudioSenders(call, audioTracks) {
+    if (!call || !audioTracks || !audioTracks.length) return;
+    try {
+      const pc = call.peerConnection || call._pc || call.pc;
+      if (!pc) return;
+      const senders = pc.getSenders();
+      const hasAudioSender = senders.some((s) => s.track && s.track.kind === "audio");
+      if (hasAudioSender) return;
+      audioTracks.forEach((at) => {
+        try {
+          pc.addTrack(at, new MediaStream([at]));
+        } catch (e) {
+          console.warn("ensureAudioSenders addTrack", e);
+        }
+      });
+    } catch (e) {
+      console.warn("ensureAudioSenders", e);
+    }
+  }
+
+  /** Sistem sesini mevcut 1:1 ses aramasının PC'sine de ekle (yedek yol) */
+  function injectSystemAudioIntoVoiceCall(target, audioTracks) {
+    if (!audioTracks || !audioTracks.length) return;
+    try {
+      const voice =
+        mediaCalls.get(target) || (callWith === target && mediaCall ? mediaCall : null);
+      if (!voice) return;
+      const pc = voice.peerConnection || voice._pc || voice.pc;
+      if (!pc) return;
+      audioTracks.forEach((at) => {
+        const already = pc.getSenders().some((s) => s.track && s.track.id === at.id);
+        if (already) return;
+        try {
+          pc.addTrack(at, new MediaStream([at]));
+        } catch (e) {
+          // replace idle audio sender if addTrack fails
+          try {
+            const idle = pc.getSenders().find((s) => s.track && s.track.kind === "audio" && s.track.readyState === "ended");
+            if (idle) idle.replaceTrack(at);
+          } catch (e2) {
+            console.warn("inject voice audio", e2);
+          }
+        }
+      });
+    } catch (e) {
+      console.warn("injectSystemAudioIntoVoiceCall", e);
+    }
   }
 
   async function optimizeScreenSender(call, quality, fps) {
@@ -3383,7 +3548,7 @@
           const video = qualityConstraints(q, fps);
 
           const wantSysAudio = !!(el.screenSystemAudio && el.screenSystemAudio.checked);
-          // Electron: audio true → main setDisplayMediaRequestHandler loopback
+          // Electron: audio:true → main handler WASAPI loopback
           try {
             screenStream = await navigator.mediaDevices.getDisplayMedia({
               video: {
@@ -3391,25 +3556,32 @@
                 height: video.height,
                 frameRate: video.frameRate,
               },
-              audio: wantSysAudio
-                ? {
-                    echoCancellation: false,
-                    noiseSuppression: false,
-                    autoGainControl: false,
-                  }
-                : false,
+              audio: !!wantSysAudio,
             });
           } catch (err1) {
             if (wantSysAudio) {
               console.warn("Sesli ekran başarısız, sadece video:", err1);
               screenStream = await navigator.mediaDevices.getDisplayMedia({
-                video: true,
+                video: {
+                  width: video.width,
+                  height: video.height,
+                  frameRate: video.frameRate,
+                },
                 audio: false,
               });
               renderMessage({ type: "system", text: t("screenNoAudio") });
             } else {
               throw err1;
             }
+          }
+
+          if (!wantSysAudio) {
+            screenStream.getAudioTracks().forEach((t) => {
+              try {
+                t.stop();
+                screenStream.removeTrack(t);
+              } catch {}
+            });
           }
 
           const track = screenStream.getVideoTracks()[0];
@@ -3427,40 +3599,44 @@
             } catch {}
           });
 
-          // Video + sistem sesi birlikte gönder (tek PeerJS call)
+          const audioTracks = screenStream.getAudioTracks().filter((t) => t.readyState === "live");
+          const videoOnly = new MediaStream(screenStream.getVideoTracks());
+
           for (const target of targets) {
             try {
               const pid = await peerIdOf(target);
-              const sc = peer.call(pid, screenStream, {
+              const full = audioTracks.length
+                ? new MediaStream([...screenStream.getVideoTracks(), ...audioTracks])
+                : videoOnly;
+              const sc = peer.call(pid, full, {
                 metadata: {
                   kind: "screen",
                   from: me.username,
-                  hasAudio: screenStream.getAudioTracks().length > 0,
+                  hasAudio: audioTracks.length > 0,
                 },
               });
               if (sc) {
                 if (!screenCall) screenCall = sc;
                 screenCalls.set(target, sc);
                 setTimeout(() => optimizeScreenSender(sc, q, fps), 400);
-                // Ses track'inin de gönderildiğinden emin ol
-                setTimeout(() => {
-                  try {
-                    const pc = sc.peerConnection || sc._pc || sc.pc;
-                    if (!pc) return;
-                    const senders = pc.getSenders();
-                    const hasAudioSender = senders.some((s) => s.track && s.track.kind === "audio");
-                    if (!hasAudioSender) {
-                      screenStream.getAudioTracks().forEach((at) => {
-                        try {
-                          pc.addTrack(at, screenStream);
-                        } catch {}
-                      });
-                    }
-                  } catch (e) {
-                    console.warn("screen audio sender", e);
-                  }
-                }, 600);
+                setTimeout(() => ensureAudioSenders(sc, audioTracks), 500);
               }
+              if (audioTracks.length) {
+                try {
+                  const audioOnly = new MediaStream(audioTracks);
+                  const ac = peer.call(pid, audioOnly, {
+                    metadata: {
+                      kind: "screen-audio",
+                      from: me.username,
+                      hasAudio: true,
+                    },
+                  });
+                  if (ac) screenCalls.set(target + ":audio", ac);
+                } catch (e) {
+                  console.warn("screen-audio call", e);
+                }
+              }
+              injectSystemAudioIntoVoiceCall(target, audioTracks);
             } catch (e) {
               console.warn("screen to", target, e);
             }
@@ -3471,13 +3647,20 @@
           if (el.fsLocal && !el.fsMedia.hidden) el.fsLocal.srcObject = el.localVideo.srcObject;
           setScreenBtnUi();
           track.onended = () => stopScreen();
-          const hasAudio = screenStream.getAudioTracks().length > 0;
+          const hasAudio = audioTracks.length > 0;
           renderMessage({
             type: "system",
-            text: hasAudio ? t("screenSharingAudio") : t("screenSharing"),
+            text: hasAudio
+              ? t("screenSharingAudio")
+              : wantSysAudio
+                ? t("screenAudioMissing")
+                : t("screenSharing"),
           });
         } catch (err) {
-          renderMessage({ type: "system", text: "Ekran paylaşılamadı: " + (err.message || err) });
+          renderMessage({
+            type: "system",
+            text: t("screenFailed") + ": " + (err.message || err),
+          });
           console.error(err);
         }
       });
@@ -4073,7 +4256,7 @@
       const f = e.dataTransfer?.files?.[0];
       if (!f) return;
       if (!activeFriend && !activeGroupId) {
-        renderMessage({ type: "system", text: "Önce bir sohbet seç." });
+        renderMessage({ type: "system", text: t("selectChatFirst") });
         return;
       }
       let p = "";
@@ -4082,7 +4265,7 @@
       } catch {}
       if (!p) p = f.path || "";
       if (!p) {
-        renderMessage({ type: "system", text: "Dosya yolu okunamadı; 📎 ile seç." });
+        renderMessage({ type: "system", text: t("pathFailed") });
         return;
       }
       await sendFile({ path: p, name: f.name, size: f.size });

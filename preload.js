@@ -69,6 +69,7 @@ contextBridge.exposeInMainWorld("api", {
   saveAvatarDataUrl: (userId, dataUrl) =>
     ipcRenderer.invoke("avatar-save-dataurl", { userId, dataUrl }),
   openPath: (p) => ipcRenderer.invoke("open-path", p),
+  openExternal: (url) => ipcRenderer.invoke("open-external", url),
   filePreview: (filePath) => ipcRenderer.invoke("file-preview-dataurl", filePath),
   deletePath: (p) => ipcRenderer.invoke("delete-path", p),
   isWindowFocused: () => ipcRenderer.invoke("window-focused"),

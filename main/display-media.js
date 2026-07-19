@@ -51,15 +51,17 @@ function setupDisplayMedia(opts = {}) {
           callback({});
           return;
         }
-        // Windows loopback = system audio for watchers (Toju / Electron pattern)
-        const wantAudio = !!(request && request.audioRequested);
-        if (wantAudio) {
+        // Windows: her zaman WASAPI loopback dene (istemci track'i kapatabilir).
+        // audioRequested false olsa bile loopback vermek capture başarı oranını artırır.
+        try {
           callback({ video: source, audio: "loopback" });
-        } else {
+        } catch (e1) {
+          log("displayMedia loopback failed, video-only", e1);
           try {
-            callback({ video: source, audio: "loopback" });
-          } catch {
             callback({ video: source });
+          } catch (e2) {
+            log("displayMedia video-only failed", e2);
+            callback({});
           }
         }
       } catch (err) {

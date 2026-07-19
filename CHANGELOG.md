@@ -1,5 +1,14 @@
 # Changelog
 
+## 4.6.1
+
+### Links, i18n, screen system audio
+
+- **Chat links:** `http(s)://` and `www.` become clickable; click shows confirm then opens via `shell.openExternal`
+- **EN/TR:** full pass on system messages, peer header, status labels, call controls, empty states
+- **Screen audio architecture (no rewrite):** always try WASAPI loopback; `audio: true` for capture; send via screen call + optional `screen-audio` call + inject into voice PC as fallback
+- Receiver handles `kind: screen-audio` and merges tracks into `#remote-screen-audio`
+
 ## 4.6.0
 
 ### Splitter + stabilite release

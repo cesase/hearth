@@ -743,6 +743,16 @@ ipcMain.handle("avatar-save-dataurl", (_e, { userId, dataUrl }) => {
 ipcMain.handle("open-path", (_e, p) => {
   if (p) shell.showItemInFolder(p);
 });
+ipcMain.handle("open-external", async (_e, url) => {
+  const u = String(url || "").trim();
+  if (!/^https?:\/\//i.test(u)) return { ok: false, error: "invalid-url" };
+  try {
+    await shell.openExternal(u);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e && e.message ? e.message : String(e) };
+  }
+});
 
 ipcMain.handle("file-preview-dataurl", (_e, filePath) => {
   try {
