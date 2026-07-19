@@ -1,9 +1,10 @@
 {
-  "enabled": true,
+  "enabled": false,
   "host": "127.0.0.1",
   "port": 9000,
   "secure": false,
   "peerPath": "/peerjs",
   "presencePath": "/presence",
-  "note": "Tüm arkadaşlar aynı host'u kullanmalı. LAN için bilgisayarın yerel IP'sini yaz."
+  "embed": false,
+  "note": "enabled:false = public PeerJS (şehirler arası varsayılan). LAN/VPS için enabled:true ve TÜM arkadaşlarda aynı host IP/domain."
 }

@@ -43,22 +43,22 @@
 
           <p id="cloud-mode-badge" class="hint tiny" style="margin-bottom:10px">Yerel mod</p>
           <form id="form-login" class="auth-form">
-            <label>E-posta<input id="login-email" type="email" required autocomplete="username" /></label>
-            <label>Şifre<input id="login-pass" type="password" required autocomplete="current-password" /></label>
+            <label><span data-i18n="email">E-posta</span><input id="login-email" type="email" required autocomplete="username" data-i18n-placeholder="email" placeholder="Email" /></label>
+            <label><span data-i18n="password">Şifre</span><input id="login-pass" type="password" required autocomplete="current-password" data-i18n-placeholder="password" placeholder="Password" /></label>
             <p id="login-error" class="form-error" hidden></p>
-            <button class="btn primary block" type="submit">Giriş yap</button>
+            <button class="btn primary block" type="submit" data-i18n="loginBtn">Giriş yap</button>
           </form>
 
           <form id="form-register" class="auth-form" hidden>
-            <label>E-posta<input id="reg-email" type="email" required autocomplete="email" /></label>
-            <label>Kullanıcı adı (benzersiz)
-              <input id="reg-username" type="text" required minlength="3" maxlength="20" pattern="[A-Za-z0-9._]+" placeholder="ornek_kullanici" autocomplete="off" />
+            <label><span data-i18n="email">E-posta</span><input id="reg-email" type="email" required autocomplete="email" data-i18n-placeholder="email" placeholder="Email" /></label>
+            <label><span data-i18n="usernameUnique">Kullanıcı adı (benzersiz)</span>
+              <input id="reg-username" type="text" required minlength="3" maxlength="20" pattern="[A-Za-z0-9._]+" data-i18n-placeholder="usernamePh" placeholder="username_example" autocomplete="off" />
             </label>
-            <label>Görünen ad<input id="reg-display" type="text" maxlength="32" placeholder="İsteğe bağlı" /></label>
-            <label>Şifre (min 6)<input id="reg-pass" type="password" required minlength="6" autocomplete="new-password" /></label>
-            <p class="hint">Sadece kendi bilgilerin. Arkadaş adını girmen gerekmez — sonra listeden eklersin.</p>
+            <label><span data-i18n="displayName">Görünen ad</span><input id="reg-display" type="text" maxlength="32" data-i18n-placeholder="optionalPh" placeholder="Optional" /></label>
+            <label><span data-i18n="passwordMin">Şifre (min 6)</span><input id="reg-pass" type="password" required minlength="6" autocomplete="new-password" data-i18n-placeholder="password" placeholder="Password" /></label>
+            <p class="hint" data-i18n="regHint">Sadece kendi bilgilerin. Arkadaş adını girmen gerekmez — sonra listeden eklersin.</p>
             <p id="reg-error" class="form-error" hidden></p>
-            <button class="btn primary block" type="submit">Hesap oluştur</button>
+            <button class="btn primary block" type="submit" data-i18n="registerBtn">Hesap oluştur</button>
           </form>
         </div>
       </div>
@@ -158,7 +158,7 @@
           </div>
           <div class="stage-header-right">
             <div class="chat-search-wrap" id="chat-search-wrap" hidden>
-              <input id="chat-search" type="search" placeholder="Bu sohbette ara…" maxlength="80" />
+              <input id="chat-search" type="search" data-i18n-placeholder="searchChat" placeholder="Search this chat…" maxlength="80" />
               <span id="chat-search-count" class="chat-search-count"></span>
             </div>
             <div class="stage-actions" id="stage-actions" hidden>
@@ -284,7 +284,7 @@
           <div id="composer-panels" class="composer-panels">
             <div id="emoji-panel" class="pop-panel" hidden></div>
             <div id="gif-panel" class="pop-panel gif-panel" hidden>
-              <input id="gif-search" type="text" placeholder="GIF ara (Google/Tenor)…" />
+              <input id="gif-search" type="text" data-i18n-placeholder="gifSearch" placeholder="Search GIFs…" />
               <div id="gif-results" class="gif-results"></div>
               <p class="hint tiny">Google’ın GIF servisi (Tenor) ile uygulama içi arama — tarayıcı açılmaz.</p>
             </div>
@@ -296,16 +296,16 @@
               <button type="button" id="btn-gif" class="icon-btn" title="GIF">GIF</button>
               <button type="button" id="btn-file" class="icon-btn" title="Dosya gönder" disabled>📎</button>
             </div>
-            <input id="chat-input" type="text" placeholder="Mesaj yaz…" maxlength="2000" autocomplete="off" disabled />
-            <button type="submit" class="btn primary sm" id="btn-send" disabled>Gönder</button>
+            <input id="chat-input" type="text" data-i18n-placeholder="messagePh" placeholder="Type a message…" maxlength="2000" autocomplete="off" disabled />
+            <button type="submit" class="btn primary sm" id="btn-send" data-i18n="send" disabled>Gönder</button>
           </form>
         </div>
       </main>
 
       <!-- Sağ: grup odaları (çağrı kontrolleri görüşme panelinde) -->
-      <aside class="groups-pane" id="app-controls">
+      <aside class="groups-pane" id="app-controls" hidden>
         <div class="groups-pane-header">
-          <h3>Grup odaları</h3>
+          <h3 data-i18n="groups">Grup odaları</h3>
           <button type="button" id="btn-new-group" class="icon-btn" title="Seçili arkadaşlardan oda oluştur">＋</button>
         </div>
         <div id="group-list" class="group-list"></div>
@@ -332,7 +332,7 @@
         <h2 data-i18n="addFriendTitle">Arkadaş isteği</h2>
         <p class="hint" data-i18n="addFriendHint">Kullanıcı adını yaz. Karşı taraf kabul ederse ikiniz de listede görünürsünüz.</p>
         <label data-i18n="username">Kullanıcı adı
-          <input id="add-friend-user" type="text" placeholder="ornek_kullanici" maxlength="20" />
+          <input id="add-friend-user" type="text" data-i18n-placeholder="usernamePh" placeholder="username_example" maxlength="20" />
         </label>
         <p id="add-friend-error" class="form-error" hidden></p>
         <div class="modal-actions">

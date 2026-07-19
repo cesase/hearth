@@ -132,6 +132,7 @@
     btnFullscreenMedia: $("btn-fullscreen-media"),
     btnGroupFromSelection: $("btn-group-from-selection"),
     btnNewGroup: $("btn-new-group"),
+    groupsPane: $("app-controls"),
     groupList: $("group-list"),
     groupEmpty: $("group-empty"),
     chatSearch: $("chat-search"),
@@ -469,7 +470,13 @@
     "chat-search": "searchChat",
     "gif-search": "gifSearch",
     "my-status-text": "statusText",
-    "add-friend-user": "username",
+    "add-friend-user": "usernamePh",
+    "reg-username": "usernamePh",
+    "reg-display": "optionalPh",
+    "login-email": "email",
+    "reg-email": "email",
+    "login-pass": "password",
+    "reg-pass": "password",
   };
 
   function applyLanguage(lang) {
@@ -497,6 +504,7 @@
       const k = node.getAttribute("data-i18n-placeholder");
       if (k && t(k)) node.placeholder = t(k);
     });
+    // label > span[data-i18n] already handled; also nested labels with first child text
     for (const [id, key] of Object.entries(UI_TEXT_MAP)) {
       const n = $(id);
       if (n && t(key)) {
@@ -1102,11 +1110,29 @@
     return "on";
   }
 
+  /** Sağ grup paneli: varsayılan gizli; grup oluşunca / grup aramasında açılır */
+  function setGroupsPaneVisible(show) {
+    const pane = el.groupsPane || $("app-controls");
+    if (!pane) return;
+    pane.hidden = !show;
+    pane.classList.toggle("groups-pane-visible", !!show);
+    document.body.classList.toggle("has-groups-pane", !!show);
+  }
+
+  function syncGroupsPaneVisibility() {
+    // Varsayılan gizli; ilk grup oluşunca veya aktif grup aramasında görünür
+    const show = !!(groups && groups.length > 0) || !!activeGroupId;
+    setGroupsPaneVisible(show);
+  }
+
   function updateGroupSelectionUi() {
     const n = selectedFriends.size;
     if (el.btnGroupFromSelection) {
-      el.btnGroupFromSelection.hidden = n < 1;
-      el.btnGroupFromSelection.title = n ? `${n} seçili — grup odası + ara` : "";
+      // 2+ seçim (kendin + arkadaşlar): grup çağrısı butonu
+      el.btnGroupFromSelection.hidden = n < 2;
+      el.btnGroupFromSelection.title = n
+        ? `${n} ${t("members")} — ${t("groups")}`
+        : "";
     }
   }
 
@@ -1296,6 +1322,7 @@
   function renderGroups() {
     if (!el.groupList) return;
     el.groupList.innerHTML = "";
+    syncGroupsPaneVisibility();
     if (!groups.length) {
       if (el.groupEmpty) {
         el.groupEmpty.hidden = false;
@@ -1831,6 +1858,7 @@
     el.peerAvatar.textContent = "👥";
     el.remoteTag.textContent = g.name;
     el.stageActions.hidden = false;
+    setGroupsPaneVisible(true);
     updateCallButtons();
     renderFriends();
     renderGroups();
@@ -3206,30 +3234,30 @@
       if (g) return startGroupCall(g);
     }
     if (!activeFriend || inCall) return;
+    if (!peer || peer.destroyed) {
+      renderMessage({ type: "system", text: t("netConnecting") });
+      return;
+    }
     const target = activeFriend;
     const st = presence.get(target) || "offline";
-    const dataOpen = !!(conns.get(target) && conns.get(target).open);
-    const reachable = st !== "offline" && dataOpen;
+    // Data channel yokken bile MediaConnection (peer.call) dene —
+    // şehirler arası public PeerJS için şart (chat conn gecikebilir)
+    try {
+      await tryConnect(target);
+    } catch {}
 
     outboundRing = { target, groupId: null, answered: false, finished: false };
-    let ringLabel = `@${target} aranıyor…`;
-    if (st === "busy") ringLabel = `@${target} meşgul — yine de aranıyor…`;
-    if (!dataOpen) ringLabel = `@${target} aranıyor… (P2P bağlantısı yok)`;
-    if (st === "offline") ringLabel = `@${target} çevrimdışı görünüyor…`;
+    let ringLabel = `@${target} ${t("calling")}`;
+    if (st === "busy") ringLabel = `@${target} — ${t("busy")}`;
+    if (st === "offline") ringLabel = `@${target} — ${t("offline")}`;
     showOutgoingRingUI(ringLabel);
 
     clearTimeout(callRingTimer);
-    const ringMs = reachable ? 30000 : 12000;
     callRingTimer = setTimeout(() => {
       if (outboundRing && !outboundRing.answered && !outboundRing.finished) {
-        finishOutboundAsMissed(reachable ? "timeout" : dataOpen ? "busy" : "no-data");
+        finishOutboundAsMissed(st === "offline" ? "offline" : "timeout");
       }
-    }, ringMs);
-
-    if (!reachable) {
-      // Data channel yoksa peer.call da genelde başarısız — kısa zil + net mesaj
-      return;
-    }
+    }, 30000);
 
     try {
       const stream = await ensureMicGraph();
@@ -3365,7 +3393,11 @@
 
   async function createGroupFromSelection() {
     const members = [...selectedFriends];
-    if (!members.length) return;
+    // En az 2 kişi seçili olmalı (grup = çoklu)
+    if (members.length < 2) {
+      alert(t("groupNeedTwo") || "Select at least 2 friends for a group call.");
+      return;
+    }
     try {
       const names = members
         .map((u) => friends.find((f) => f.username === u)?.displayName || u)
@@ -3375,9 +3407,11 @@
       selectedFriends.clear();
       renderFriends();
       renderGroups();
+      setGroupsPaneVisible(true);
       await openGroup(g.id);
       renderMessage({ type: "system", text: t("groupCreatedCalling") });
       await startGroupCall(g);
+      syncGroupsPaneVisibility();
     } catch (e) {
       alert(e.message || String(e));
     }

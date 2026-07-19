@@ -1,6 +1,6 @@
 {
   "name": "hearth",
-  "version": "4.6.1",
+  "version": "4.7.0",
   "description": "Hearth - P2P sesli sohbet, ekran ve dosya",
   "main": "main.js",
   "author": "Faruk",
@@ -43,7 +43,9 @@
       {
         "from": "assets",
         "to": "assets",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       }
     ],
     "publish": [
@@ -73,6 +75,7 @@
       "artifactName": "${productName}-Setup.${ext}",
       "signAndEditExecutable": false
     },
+    "afterPack": "./scripts/afterPack-icon.js",
     "portable": {
       "artifactName": "Hearth-Portable.exe"
     },
@@ -91,7 +94,8 @@
   "devDependencies": {
     "electron": "^33.4.11",
     "electron-builder": "^25.1.8",
-    "playwright": "^1.49.1"
+    "playwright": "^1.49.1",
+    "rcedit": "^5.0.2"
   },
   "dependencies": {
     "electron-updater": "^6.8.9",

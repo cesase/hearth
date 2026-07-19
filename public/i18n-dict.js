@@ -162,6 +162,12 @@ window.HEARTH_I18N = {
     netSignal: "Signal ağı hazır",
     netP2pCloud: "P2P + bulut hazır",
     netOnline: "Çevrimiçi ağı hazır",
+    usernameUnique: "Kullanıcı adı (benzersiz)",
+    usernamePh: "ornek_kullanici",
+    optionalPh: "İsteğe bağlı",
+    passwordMin: "Şifre (min 6)",
+    regHint: "Sadece kendi bilgilerin. Arkadaş adını girmen gerekmez — sonra listeden eklersin.",
+    groupNeedTwo: "Grup araması için en az 2 arkadaş seç.",
   },
   en: {
     statusOnline: "Online",
@@ -325,6 +331,12 @@ window.HEARTH_I18N = {
     netSignal: "Signal network ready",
     netP2pCloud: "P2P + cloud ready",
     netOnline: "Online network ready",
+    usernameUnique: "Username (unique)",
+    usernamePh: "username_example",
+    optionalPh: "Optional",
+    passwordMin: "Password (min 6)",
+    regHint: "Only your own details. Add friends later from the list.",
+    groupNeedTwo: "Select at least 2 friends for a group call.",
     // dynamic friend list / status
     inCall: "In a call",
     // leftover UI often left in Turkish

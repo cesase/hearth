@@ -232,15 +232,19 @@ function isPlaceholderKey(key) {
   return false;
 }
 
+/**
+ * Varsayılan: public PeerJS (şehirler arası arama çalışır).
+ * LAN/VPS kendi signal için cloud/signal.json → enabled:true + ortak host.
+ */
 function defaultSignalConfig() {
   return {
-    enabled: true,
+    enabled: false,
     host: process.env.HEARTH_SIGNAL_HOST || "127.0.0.1",
     port: Number(process.env.HEARTH_SIGNAL_PORT || 9000),
     secure: process.env.HEARTH_SIGNAL_SECURE === "1",
     peerPath: "/peerjs",
     presencePath: "/presence",
-    embed: true,
+    embed: false,
   };
 }
 

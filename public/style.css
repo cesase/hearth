@@ -322,6 +322,11 @@ textarea {
   background: var(--bg-1);
   --groups-w: 220px;
 }
+/* Grup paneli gizli: 2 kolon */
+body:not(.has-groups-pane) .app-view {
+  --groups-w: 0px;
+  grid-template-columns: var(--rail-w) minmax(0, 1fr);
+}
 
 body[data-layout="wide"] .app-view {
   --rail-w: 300px;
@@ -1375,7 +1380,7 @@ video {
   min-width: 0;
 }
 
-/* ========== GROUPS PANE (sağ) ========== */
+/* ========== GROUPS PANE (sağ) — varsayılan gizli ========== */
 .groups-pane {
   background: linear-gradient(180deg, #15171c, #101218);
   border-left: 1px solid var(--line);
@@ -1388,6 +1393,14 @@ video {
   flex-direction: column;
   gap: 8px;
 }
+.groups-pane[hidden] {
+  display: none !important;
+  width: 0 !important;
+  min-width: 0 !important;
+  padding: 0 !important;
+  border: none !important;
+}
+
 
 .groups-pane-header {
   display: flex;
