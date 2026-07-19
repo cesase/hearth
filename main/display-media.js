@@ -1,6 +1,7 @@
 /**
  * Toju invariant: setDisplayMediaRequestHandler is a session-level singleton.
  * Register at most once per app run (window recreate / tray must not re-bind).
+ * Callback must be invoked EXACTLY once.
  */
 const { session, desktopCapturer } = require("electron");
 
@@ -37,6 +38,16 @@ function setupDisplayMedia(opts = {}) {
 
   try {
     ses.setDisplayMediaRequestHandler(async (request, callback) => {
+      let done = false;
+      const respond = (payload) => {
+        if (done) return;
+        done = true;
+        try {
+          callback(payload);
+        } catch (e) {
+          log("displayMedia callback", e);
+        }
+      };
       try {
         const sources = await desktopCapturer.getSources({
           types: ["screen", "window"],
@@ -48,25 +59,16 @@ function setupDisplayMedia(opts = {}) {
         }
         pendingScreenSourceId = null;
         if (!source) {
-          callback({});
+          respond({});
           return;
         }
-        // Windows: her zaman WASAPI loopback dene (istemci track'i kapatabilir).
-        // audioRequested false olsa bile loopback vermek capture başarı oranını artırır.
-        try {
-          callback({ video: source, audio: "loopback" });
-        } catch (e1) {
-          log("displayMedia loopback failed, video-only", e1);
-          try {
-            callback({ video: source });
-          } catch (e2) {
-            log("displayMedia video-only failed", e2);
-            callback({});
-          }
-        }
+        // Only provide loopback when client requested audio — unsolicited
+        // loopback can fail capture entirely on some systems (Fable 5 fix).
+        const wantAudio = !!(request && request.audioRequested);
+        respond(wantAudio ? { video: source, audio: "loopback" } : { video: source });
       } catch (err) {
         log("displayMedia handler", err);
-        callback({});
+        respond({});
       }
     });
     displayMediaHandlerConfigured = true;

@@ -1,5 +1,23 @@
 # Changelog
 
+## 4.7.1
+
+### Fable 5 fix plan (critical bugs)
+
+- **display-media:** callback exactly once; loopback only when `audioRequested`
+- **Screen share:** single `kind:screen` call (no dual screen-audio / no dead addTrack renegotiation)
+- **Screen receive:** no double `srcObject` reset; `ontrack` / `onaddtrack` for late audio; 3s missing-audio message
+- **Incoming call:** 30s timeout → missed; close when caller hangs up; reject second call while busy
+- **AudioContext.resume** after create (silent mic on auto-answer)
+- **hangup:** `screen-stop` to all media peers before clear
+- **endCallUi:** reset remote placeholder text
+- **Group chat-edit/delete/react** use `msg.groupId`
+- **Temp data handler** removed after bind (no double hello)
+- **Noise toggle** updates all mediaCalls
+- **ICE:** remove dead openrelay TURN
+- **GIF XSS:** createElement img; **ESC** only exits fullscreen when open
+- **sendGif** group-aware; missed-call `from` fix for inbound
+
 ## 4.7.0
 
 ### Critical: city-to-city calls + desktop icon + groups UI

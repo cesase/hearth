@@ -6,25 +6,11 @@
     return;
   }
 
+  // openrelay.metered.ca kapandı — yalnızca STUN (TURN ileride cloud/signal.json)
   const ICE = {
     iceServers: [
       { urls: "stun:stun.l.google.com:19302" },
       { urls: "stun:stun1.l.google.com:19302" },
-      {
-        urls: "turn:openrelay.metered.ca:80",
-        username: "openrelayproject",
-        credential: "openrelayproject",
-      },
-      {
-        urls: "turn:openrelay.metered.ca:443",
-        username: "openrelayproject",
-        credential: "openrelayproject",
-      },
-      {
-        urls: "turn:openrelay.metered.ca:443?transport=tcp",
-        username: "openrelayproject",
-        credential: "openrelayproject",
-      },
     ],
   };
 
@@ -212,7 +198,6 @@
     btnCheckUpdates: $("btn-check-updates"),
     appVersionLabel: $("app-version-label"),
     updateStatusLabel: $("update-status-label"),
-    mediaVideos: $("media-videos"),
     btnLogoUpdate: $("btn-logo-update"),
     updateBadge: $("update-badge"),
     modalScreen: $("modal-screen"),
@@ -1081,7 +1066,8 @@
     el.btnHangup.hidden = !inCall;
     if (el.btnHangupBar) el.btnHangupBar.hidden = !inCall;
     el.btnFile.disabled = false;
-    if (el.btnScreen) el.btnScreen.disabled = !inCall;
+    // Zil sırasında ekran paylaşımı yok (Fable 5 §2.6)
+    if (el.btnScreen) el.btnScreen.disabled = !inCall || !!outboundRing;
     setScreenBtnUi();
     el.chatInput.disabled = false;
     el.btnSend.disabled = false;
@@ -1892,6 +1878,12 @@
       video: false,
     });
     audioCtx = new AudioContext();
+    // Auto-accept / mesh: kullanıcı jesti yok → context suspended kalabiliyor (sessiz mic)
+    if (audioCtx.state === "suspended") {
+      try {
+        await audioCtx.resume();
+      } catch {}
+    }
     const src = audioCtx.createMediaStreamSource(rawMicStream);
     micGain = audioCtx.createGain();
     const dest = audioCtx.createMediaStreamDestination();
@@ -2053,11 +2045,20 @@
     try {
       const old = processedMicStream;
       await ensureMicGraph(true);
-      if (inCall && mediaCall && mediaCall.peerConnection) {
-        const pc = mediaCall.peerConnection;
-        const sender = pc.getSenders().find((s) => s.track && s.track.kind === "audio");
-        const track = processedMicStream.getAudioTracks()[0];
-        if (sender && track) await sender.replaceTrack(track);
+      const track = processedMicStream && processedMicStream.getAudioTracks()[0];
+      if (inCall && track) {
+        const allCalls = new Set([
+          ...(mediaCall ? [mediaCall] : []),
+          ...mediaCalls.values(),
+        ]);
+        for (const c of allCalls) {
+          try {
+            const pc = c.peerConnection || c._pc || c.pc;
+            if (!pc) continue;
+            const sender = pc.getSenders().find((s) => s.track && s.track.kind === "audio");
+            if (sender) await sender.replaceTrack(track).catch(() => {});
+          } catch {}
+        }
       }
       if (old) {
         /* eski graph kapandı */
@@ -2245,17 +2246,20 @@
     }
 
     if (msg.type === "chat-edit" && msg.id) {
-      await api.updateChat(me.id, username, msg.id, { text: msg.text });
-      if (activeFriend === username) await reloadChat();
+      const key = msg.groupId || username;
+      await api.updateChat(me.id, key, msg.id, { text: msg.text });
+      if (chatKey() === key) await reloadChat();
       return;
     }
     if (msg.type === "chat-delete" && msg.id) {
-      await api.deleteChat(me.id, username, msg.id);
-      if (activeFriend === username) await reloadChat();
+      const key = msg.groupId || username;
+      await api.deleteChat(me.id, key, msg.id);
+      if (chatKey() === key) await reloadChat();
       return;
     }
     if (msg.type === "chat-react" && msg.id) {
-      const history = await api.getChat(me.id, username, 500);
+      const key = msg.groupId || username;
+      const history = await api.getChat(me.id, key, 500);
       const found = history.find((x) => x.id === msg.id);
       if (found) {
         const reactions = { ...(found.reactions || {}) };
@@ -2264,8 +2268,8 @@
         else arr.add(msg.from);
         reactions[msg.emoji] = [...arr];
         if (!reactions[msg.emoji].length) delete reactions[msg.emoji];
-        await api.updateChat(me.id, username, msg.id, { reactions });
-        if (activeFriend === username) await reloadChat();
+        await api.updateChat(me.id, key, msg.id, { reactions });
+        if (chatKey() === key) await reloadChat();
       }
       return;
     }
@@ -2528,9 +2532,30 @@
     peer.on("connection", (conn) => {
       // Arkadaş listesinde olmasa bile kabul et; hello ile kullanıcı adını öğrenip ekleriz
       let bound = false;
+      // Geçici hello handler — tryBind sonrası kaldırılır (çifte onData engeli)
+      const tempDataHandler = (raw) => {
+        let msg = raw;
+        if (typeof raw === "string") {
+          try {
+            msg = JSON.parse(raw);
+          } catch {
+            return;
+          }
+        }
+        if (msg && msg.type === "hello" && msg.username) {
+          tryBind(msg.username).then(() => onData(String(msg.username).toLowerCase(), msg));
+        }
+      };
+      const removeTemp = () => {
+        try {
+          if (typeof conn.off === "function") conn.off("data", tempDataHandler);
+          else if (typeof conn.removeListener === "function") conn.removeListener("data", tempDataHandler);
+        } catch {}
+      };
       const tryBind = async (username) => {
         if (bound || !username) return;
         bound = true;
+        removeTemp();
         const un = String(username).toLowerCase();
         if (!friends.some((f) => f.username === un) && un !== me.username) {
           try {
@@ -2555,19 +2580,7 @@
         }
       })();
 
-      conn.on("data", (raw) => {
-        let msg = raw;
-        if (typeof raw === "string") {
-          try {
-            msg = JSON.parse(raw);
-          } catch {
-            return;
-          }
-        }
-        if (msg && msg.type === "hello" && msg.username) {
-          tryBind(msg.username).then(() => onData(String(msg.username).toLowerCase(), msg));
-        }
-      });
+      conn.on("data", tempDataHandler);
 
       conn.on("open", async () => {
         const avatar = await api.getAvatar(me.id);
@@ -2602,35 +2615,75 @@
       const groupId = call.metadata && call.metadata.groupId;
 
       if (kind === "screen" || kind === "screen-audio") {
-        call.answer(); // alıcı stream göndermez
+        // Tek stream yolu — onMediaStream ÇAĞIRMA (çifte srcObject ezmesi, Fable 5 §1.4)
+        call.answer();
+        const expectAudio = !!(call.metadata && call.metadata.hasAudio);
+        let gotAudio = false;
+        let audioWaitTimer = null;
+        const attachScreenAudio = (track) => {
+          if (!el.remoteScreenAudio || !track) return;
+          const cur = el.remoteScreenAudio.srcObject;
+          const existing =
+            cur && typeof cur.getAudioTracks === "function" ? cur.getAudioTracks() : [];
+          if (existing.some((x) => x.id === track.id)) return;
+          el.remoteScreenAudio.srcObject = new MediaStream([
+            ...existing.filter((x) => x.readyState === "live"),
+            track,
+          ]);
+          el.remoteScreenAudio.muted = !!deafened;
+          el.remoteScreenAudio.volume = deafened
+            ? 0
+            : Math.min(1, (settings.screenAudioVolume ?? 100) / 100);
+          el.remoteScreenAudio.play().catch(() => {});
+          gotAudio = true;
+          if (audioWaitTimer) {
+            clearTimeout(audioWaitTimer);
+            audioWaitTimer = null;
+          }
+        };
         call.on("stream", (stream) => {
-          // Video + loopback ses (veya ayrı screen-audio call)
-          onMediaStream(stream, { isScreen: true, fromUser });
-          const atracks = stream.getAudioTracks();
-          if (atracks.length && el.remoteScreenAudio) {
-            // Mevcut ses track'lerini birleştir (ayrı call gelirse)
-            try {
-              const prev = el.remoteScreenAudio.srcObject;
-              const merged = new MediaStream([
-                ...(prev && typeof prev.getAudioTracks === "function" ? prev.getAudioTracks() : []),
-                ...atracks,
-              ]);
-              el.remoteScreenAudio.srcObject = merged;
-            } catch {
-              el.remoteScreenAudio.srcObject = new MediaStream(atracks);
+          const vtracks = stream.getVideoTracks();
+          if (vtracks.length) {
+            el.remoteVideo.srcObject = new MediaStream(vtracks);
+            el.remotePh.hidden = true;
+            setMediaDockVisible(true);
+            if (el.fsRemote && el.fsMedia && !el.fsMedia.hidden) {
+              el.fsRemote.srcObject = el.remoteVideo.srcObject;
             }
-            el.remoteScreenAudio.muted = !!deafened;
-            el.remoteScreenAudio.volume = Math.min(1, (settings.screenAudioVolume ?? 100) / 100);
-            el.remoteScreenAudio.play().catch(() => {});
+          }
+          stream.getAudioTracks().forEach(attachScreenAudio);
+          try {
+            stream.onaddtrack = (ev) => {
+              if (ev.track && ev.track.kind === "audio") attachScreenAudio(ev.track);
+            };
+          } catch {}
+          try {
+            const pc = call.peerConnection || call._pc || call.pc;
+            if (pc) {
+              pc.ontrack = (ev) => {
+                if (ev.track && ev.track.kind === "audio") attachScreenAudio(ev.track);
+              };
+            }
+          } catch {}
+          if (expectAudio && !gotAudio) {
+            audioWaitTimer = setTimeout(() => {
+              if (!gotAudio) {
+                renderMessage({
+                  type: "system",
+                  text: t("screenAudioMissing") || "Ekran sesi alınamadı.",
+                });
+              }
+            }, 3000);
           }
         });
         call.on("close", () => {
+          if (audioWaitTimer) clearTimeout(audioWaitTimer);
           if (kind === "screen") {
-            el.remoteVideo.srcObject = null;
+            releaseMediaElement(el.remoteVideo);
             el.remotePh.hidden = false;
+            if (el.remotePh) el.remotePh.textContent = t("noScreen") || "Ekran yok";
+            releaseMediaElement(el.remoteScreenAudio);
           }
-          // screen-audio kapanınca sesi temizle; screen kapanınca da
-          if (el.remoteScreenAudio && kind === "screen") el.remoteScreenAudio.srcObject = null;
         });
         return;
       }
@@ -2652,9 +2705,11 @@
         return;
       }
 
-      if (inCall) {
-        // 1:1 iken ikinci çağrıyı reddet
-        call.close();
+      if (inCall || incomingCall) {
+        // Meşgul: ikinci gelen çağrıyı reddet (üzerine yazma)
+        try {
+          call.close();
+        } catch {}
         return;
       }
       incomingCall = call;
@@ -2667,6 +2722,27 @@
       playIncomingRing();
       api.notifyIncoming();
       if (!groupId && activeFriend !== fromUser) openFriend(fromUser);
+
+      // 30 sn cevap yok → cevapsız
+      clearTimeout(incomingRingTimer);
+      incomingRingTimer = setTimeout(() => {
+        if (incomingCall === call) {
+          const fu = fromUser;
+          const gid = groupId;
+          rejectCall();
+          appendMissedCall(gid || fu, fu, "in");
+        }
+      }, 30000);
+      call.on("close", () => {
+        if (incomingCall === call) {
+          clearTimeout(incomingRingTimer);
+          incomingRingTimer = null;
+          stopRings();
+          el.incomingBar.hidden = true;
+          incomingCall = null;
+          callWith = null;
+        }
+      });
     });
 
     peer.on("disconnected", () => {
@@ -2744,7 +2820,9 @@
   }
 
   async function sendGif(url) {
-    if (!activeFriend || !url) return;
+    if (!url) return;
+    const key = chatKey();
+    if (!key) return;
     const m = {
       id: crypto.randomUUID(),
       type: "chat",
@@ -2754,9 +2832,19 @@
       from: me.username,
       displayName: me.displayName,
       ts: Date.now(),
+      groupId: activeGroupId || null,
     };
-    await persistAndShow(activeFriend, m);
-    sendTo(activeFriend, { type: "gif", url, displayName: me.displayName, ts: m.ts });
+    await persistAndShow(key, m);
+    for (const u of recipientsForChat()) {
+      sendTo(u, {
+        type: "gif",
+        url,
+        displayName: me.displayName,
+        ts: m.ts,
+        id: m.id,
+        groupId: activeGroupId || null,
+      });
+    }
   }
 
   // ---------- file P2P (base64 JSON chunks — güvenilir) ----------
@@ -2990,6 +3078,8 @@
     clearPeerVoices();
     el.remotePh.hidden = false;
     el.localPh.hidden = false;
+    if (el.remotePh) el.remotePh.textContent = t("noScreen") || "Ekran yok";
+    if (el.localPh) el.localPh.textContent = t("you") || "Sen";
     stopCallTimer();
     setScreenBtnUi();
     exitFullscreenMedia();
@@ -3053,8 +3143,17 @@
     inCall = false;
     stopRings();
     clearTimeout(callRingTimer);
+    clearTimeout(incomingRingTimer);
+    incomingRingTimer = null;
     outboundRing = null;
     el.mediaDock?.classList.remove("outgoing-ring-ui");
+    // screen-stop: mediaCalls clear ÖNCE tüm katılımcılara
+    if (was) {
+      const notify = new Set();
+      if (callWith) notify.add(callWith);
+      for (const u of mediaCalls.keys()) notify.add(u);
+      for (const u of notify) sendTo(u, { type: "screen-stop" });
+    }
     if (screenStream) {
       screenStream.getTracks().forEach((t) => t.stop());
       screenStream = null;
@@ -3092,7 +3191,6 @@
       incomingCall = null;
     }
     el.incomingBar.hidden = true;
-    if (was && callWith) sendTo(callWith, { type: "screen-stop" });
     const friend = callWith;
     endCallUi();
     if (was && friend) setPresence(friend, conns.get(friend)?.open ? "online" : "offline");
@@ -3169,7 +3267,8 @@
       type: "missed-call",
       kind: "missed-call",
       text,
-      from: me.username,
+      // Gelen cevapsız: from = arayan; giden: from = ben
+      from: direction === "in" ? withUser : me.username,
       ts: Date.now(),
     };
     await persistAndShow(targetKey, m);
@@ -3178,6 +3277,8 @@
 
   /** Giden arama: 30 sn zil UI (offline olsa bile), sonra cevapsız */
   let outboundRing = null; // { target, groupId, answered }
+  /** Gelen arama 30 sn timeout */
+  let incomingRingTimer = null;
 
   function showOutgoingRingUI(label) {
     inCall = true;
@@ -3420,6 +3521,8 @@
   async function acceptCall() {
     if (!incomingCall) return;
     try {
+      clearTimeout(incomingRingTimer);
+      incomingRingTimer = null;
       stopRings();
       const stream = await ensureMicGraph();
       const friend = callWith;
@@ -3439,6 +3542,8 @@
   }
 
   function rejectCall() {
+    clearTimeout(incomingRingTimer);
+    incomingRingTimer = null;
     stopRings();
     if (incomingCall) {
       try {
@@ -3477,55 +3582,6 @@
     if (q === "720p") return 2_500_000;
     if (q === "lossless") return 8_000_000;
     return 4_500_000;
-  }
-
-  function ensureAudioSenders(call, audioTracks) {
-    if (!call || !audioTracks || !audioTracks.length) return;
-    try {
-      const pc = call.peerConnection || call._pc || call.pc;
-      if (!pc) return;
-      const senders = pc.getSenders();
-      const hasAudioSender = senders.some((s) => s.track && s.track.kind === "audio");
-      if (hasAudioSender) return;
-      audioTracks.forEach((at) => {
-        try {
-          pc.addTrack(at, new MediaStream([at]));
-        } catch (e) {
-          console.warn("ensureAudioSenders addTrack", e);
-        }
-      });
-    } catch (e) {
-      console.warn("ensureAudioSenders", e);
-    }
-  }
-
-  /** Sistem sesini mevcut 1:1 ses aramasının PC'sine de ekle (yedek yol) */
-  function injectSystemAudioIntoVoiceCall(target, audioTracks) {
-    if (!audioTracks || !audioTracks.length) return;
-    try {
-      const voice =
-        mediaCalls.get(target) || (callWith === target && mediaCall ? mediaCall : null);
-      if (!voice) return;
-      const pc = voice.peerConnection || voice._pc || voice.pc;
-      if (!pc) return;
-      audioTracks.forEach((at) => {
-        const already = pc.getSenders().some((s) => s.track && s.track.id === at.id);
-        if (already) return;
-        try {
-          pc.addTrack(at, new MediaStream([at]));
-        } catch (e) {
-          // replace idle audio sender if addTrack fails
-          try {
-            const idle = pc.getSenders().find((s) => s.track && s.track.kind === "audio" && s.track.readyState === "ended");
-            if (idle) idle.replaceTrack(at);
-          } catch (e2) {
-            console.warn("inject voice audio", e2);
-          }
-        }
-      });
-    } catch (e) {
-      console.warn("injectSystemAudioIntoVoiceCall", e);
-    }
   }
 
   async function optimizeScreenSender(call, quality, fps) {
@@ -3633,16 +3689,17 @@
             } catch {}
           });
 
+          // PeerJS renegotiation yok: track'ler EN BAŞTA stream'de olmalı; tek kind:screen call
           const audioTracks = screenStream.getAudioTracks().filter((t) => t.readyState === "live");
-          const videoOnly = new MediaStream(screenStream.getVideoTracks());
+          const fullStream = new MediaStream([
+            ...screenStream.getVideoTracks(),
+            ...audioTracks,
+          ]);
 
           for (const target of targets) {
             try {
               const pid = await peerIdOf(target);
-              const full = audioTracks.length
-                ? new MediaStream([...screenStream.getVideoTracks(), ...audioTracks])
-                : videoOnly;
-              const sc = peer.call(pid, full, {
+              const sc = peer.call(pid, fullStream, {
                 metadata: {
                   kind: "screen",
                   from: me.username,
@@ -3653,24 +3710,7 @@
                 if (!screenCall) screenCall = sc;
                 screenCalls.set(target, sc);
                 setTimeout(() => optimizeScreenSender(sc, q, fps), 400);
-                setTimeout(() => ensureAudioSenders(sc, audioTracks), 500);
               }
-              if (audioTracks.length) {
-                try {
-                  const audioOnly = new MediaStream(audioTracks);
-                  const ac = peer.call(pid, audioOnly, {
-                    metadata: {
-                      kind: "screen-audio",
-                      from: me.username,
-                      hasAudio: true,
-                    },
-                  });
-                  if (ac) screenCalls.set(target + ":audio", ac);
-                } catch (e) {
-                  console.warn("screen-audio call", e);
-                }
-              }
-              injectSystemAudioIntoVoiceCall(target, audioTracks);
             } catch (e) {
               console.warn("screen to", target, e);
             }
@@ -3753,7 +3793,11 @@
       if (!it.thumb) continue;
       const b = document.createElement("button");
       b.type = "button";
-      b.innerHTML = `<img src="${it.thumb}" alt="gif" />`;
+      // XSS yok: attribute injection engeli (Fable 5 §5.1)
+      const img = document.createElement("img");
+      img.alt = "gif";
+      img.src = it.thumb;
+      b.appendChild(img);
       b.addEventListener("click", () => {
         sendGif(it.full || it.thumb);
         el.gifPanel.hidden = true;
@@ -3761,7 +3805,10 @@
       el.gifResults.appendChild(b);
     }
     if (!el.gifResults.children.length) {
-      el.gifResults.innerHTML = "<p class='hint tiny'>Sonuç yok.</p>";
+      const p = document.createElement("p");
+      p.className = "hint tiny";
+      p.textContent = "Sonuç yok.";
+      el.gifResults.appendChild(p);
     }
   }
 
@@ -4171,7 +4218,9 @@
     el.fsLayout.addEventListener("change", () => applyMediaLayout(el.fsLayout.value));
   }
   document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") exitFullscreenMedia();
+    if (e.key === "Escape" && el.fsMedia && !el.fsMedia.hidden) {
+      exitFullscreenMedia();
+    }
   });
 
   async function broadcastPresence() {
