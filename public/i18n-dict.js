@@ -169,7 +169,7 @@ window.HEARTH_I18N = {
     regHint: "Sadece kendi bilgilerin. Arkadaş adını girmen gerekmez — sonra listeden eklersin.",
     groupNeedTwo: "Grup araması için en az 2 arkadaş seç.",
     screenNeedCall: "Ekran paylaşımı için önce görüşmede olmalısın.",
-    pressKeys: "Tuş veya Mouse 4/5 bas…",
+    pressKeys: "Herhangi bir tuş veya fare tuşu…",
   },
   en: {
     statusOnline: "Online",
@@ -340,7 +340,7 @@ window.HEARTH_I18N = {
     regHint: "Only your own details. Add friends later from the list.",
     groupNeedTwo: "Select at least 2 friends for a group call.",
     screenNeedCall: "Join a call before sharing your screen.",
-    pressKeys: "Press a key or Mouse 4/5…",
+    pressKeys: "Any key or mouse button…",
     // dynamic friend list / status
     inCall: "In a call",
     // leftover UI often left in Turkish

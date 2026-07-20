@@ -1,5 +1,15 @@
 # Changelog
 
+## 4.8.0
+
+### Screen share rebuild + any-button hotkeys
+
+- **Share button:** enabled whenever `inCall` / mediaCall exists; force-clear `disabled`; clear `outboundRing` on bind
+- **Capture:** simple `getDisplayMedia({video:true, audio})` + loopback when audio wanted
+- **Audio path:** primary video+audio call + optional `screen-audio` backup call; receiver attaches audio without thrashing video
+- **Hotkeys:** capture **any** keyboard key or mouse button (Mouse1–5) with 400ms open-click ignore; global via Electron + uiohook (works over games)
+- Labels: Sol tık / Sağ tık / Orta / Mouse 4–5
+
 ## 4.7.2
 
 ### Screen share unlock + global hotkeys + Mouse4

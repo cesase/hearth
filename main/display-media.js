@@ -1,7 +1,6 @@
 /**
- * Toju invariant: setDisplayMediaRequestHandler is a session-level singleton.
- * Register at most once per app run (window recreate / tray must not re-bind).
- * Callback must be invoked EXACTLY once.
+ * Display-media singleton (Toju rule).
+ * Callback EXACTLY once. Prefer WASAPI loopback when audio is wanted.
  */
 const { session, desktopCapturer } = require("electron");
 
@@ -48,6 +47,7 @@ function setupDisplayMedia(opts = {}) {
           log("displayMedia callback", e);
         }
       };
+
       try {
         const sources = await desktopCapturer.getSources({
           types: ["screen", "window"],
@@ -62,10 +62,15 @@ function setupDisplayMedia(opts = {}) {
           respond({});
           return;
         }
-        // Only provide loopback when client requested audio — unsolicited
-        // loopback can fail capture entirely on some systems (Fable 5 fix).
-        const wantAudio = !!(request && request.audioRequested);
-        respond(wantAudio ? { video: source, audio: "loopback" } : { video: source });
+
+        // Electron: audioRequested bazen undefined gelir — sistem sesi için loopback dene.
+        // İstemci audio:false gönderdiyse track'i kendisi kapatır.
+        const tryLoopback = request.audioRequested !== false;
+        if (tryLoopback) {
+          respond({ video: source, audio: "loopback" });
+        } else {
+          respond({ video: source });
+        }
       } catch (err) {
         log("displayMedia handler", err);
         respond({});

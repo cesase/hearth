@@ -1,7 +1,13 @@
 /**
- * Global hotkeys — keyboard via Electron globalShortcut (works when unfocused),
- * mouse 4/5 via uiohook-napi (fullscreen games often block only keyboard hooks
- * partially; mouse XButtons need low-level hook).
+ * Global hotkeys for mic / deafen — work while games have focus.
+ * - Keyboard: Electron globalShortcut + uiohook backup
+ * - Any mouse button (1–5): uiohook-napi only
+ *
+ * Accel format examples:
+ *   CommandOrControl+Shift+M
+ *   F8
+ *   Mouse1 | Mouse2 | Mouse3 | Mouse4 | Mouse5
+ *   Ctrl+Mouse4
  */
 const { globalShortcut } = require("electron");
 
@@ -15,18 +21,19 @@ try {
   console.warn("[hotkeys] uiohook-napi unavailable:", e.message);
 }
 
-/** @type {null | (() => void)} */
 let onMic = null;
-/** @type {null | (() => void)} */
 let onDeaf = null;
 let micAccel = "";
 let deafAccel = "";
 let uioStarted = false;
+let lastFireAt = 0;
+let lastFireCh = "";
 
 function parseAccel(accel) {
   const raw = String(accel || "").trim();
   if (!raw) return null;
-  const parts = raw.split("+").map((p) => p.trim());
+  const parts = raw.split("+").map((p) => p.trim()).filter(Boolean);
+  if (!parts.length) return null;
   const key = parts[parts.length - 1];
   const mods = {
     ctrl: parts.some((p) => /^(CommandOrControl|Control|Ctrl)$/i.test(p)),
@@ -38,23 +45,20 @@ function parseAccel(accel) {
 }
 
 function isMouseKey(key) {
-  return /^Mouse[45]$/i.test(key || "");
+  return /^Mouse[1-5]$/i.test(key || "");
 }
 
+/** uiohook button: 1=L 2=R 3=M 4=back 5=forward */
 function mouseButtonFromKey(key) {
-  // uiohook: 1=L, 2=R, 3=M, 4=Mouse4/back, 5=Mouse5/forward
-  if (/^Mouse4$/i.test(key)) return 4;
-  if (/^Mouse5$/i.test(key)) return 5;
-  return null;
+  const m = String(key || "").match(/^Mouse([1-5])$/i);
+  return m ? Number(m[1]) : null;
 }
 
-/** Map accelerator key name → uiohook keycode if available */
 function keyToUiohookCode(key) {
   if (!UiohookKey || !key) return null;
   const k = String(key);
-  if (/^F\d+$/i.test(k)) {
-    const n = Number(k.slice(1));
-    const name = "F" + n;
+  if (/^F([1-9]|1[0-9]|2[0-4])$/i.test(k)) {
+    const name = "F" + k.slice(1);
     return UiohookKey[name] != null ? UiohookKey[name] : null;
   }
   if (k.length === 1) {
@@ -66,6 +70,7 @@ function keyToUiohookCode(key) {
     Enter: "Enter",
     Tab: "Tab",
     Escape: "Escape",
+    Esc: "Escape",
     Backspace: "Backspace",
     Delete: "Delete",
     Insert: "Insert",
@@ -77,6 +82,10 @@ function keyToUiohookCode(key) {
     ArrowDown: "Down",
     ArrowLeft: "Left",
     ArrowRight: "Right",
+    Up: "Up",
+    Down: "Down",
+    Left: "Left",
+    Right: "Right",
   };
   const name = map[k] || k;
   return UiohookKey[name] != null ? UiohookKey[name] : null;
@@ -97,7 +106,6 @@ function matchMouseEvent(e, parsed) {
   if (!parsed || !isMouseKey(parsed.key)) return false;
   const btn = mouseButtonFromKey(parsed.key);
   if (btn == null || e.button !== btn) return false;
-  // uiohook mousedown may not always set ctrlKey — check both
   if (!!e.ctrlKey !== parsed.mods.ctrl) return false;
   if (!!e.altKey !== parsed.mods.alt) return false;
   if (!!e.shiftKey !== parsed.mods.shift) return false;
@@ -105,12 +113,9 @@ function matchMouseEvent(e, parsed) {
   return true;
 }
 
-/** Debounce double-fire (Electron globalShortcut + uiohook aynı anda) */
-let lastFireAt = 0;
-let lastFireCh = "";
 function fireOnce(ch, fn) {
   const now = Date.now();
-  if (ch === lastFireCh && now - lastFireAt < 120) return;
+  if (ch === lastFireCh && now - lastFireAt < 150) return;
   lastFireAt = now;
   lastFireCh = ch;
   if (typeof fn === "function") fn();
@@ -118,29 +123,22 @@ function fireOnce(ch, fn) {
 
 function ensureUiohook() {
   if (!uIOhook || uioStarted) return;
-  // Klavye yedek: exclusive fullscreen oyunlarda Electron kısayolu yetmezse
   uIOhook.on("keydown", (e) => {
     const micP = parseAccel(micAccel);
     const deafP = parseAccel(deafAccel);
-    if (micP && !isMouseKey(micP.key) && matchKeyboardEvent(e, micP)) {
-      fireOnce("mic", onMic);
-    } else if (deafP && !isMouseKey(deafP.key) && matchKeyboardEvent(e, deafP)) {
-      fireOnce("deaf", onDeaf);
-    }
+    if (micP && !isMouseKey(micP.key) && matchKeyboardEvent(e, micP)) fireOnce("mic", onMic);
+    else if (deafP && !isMouseKey(deafP.key) && matchKeyboardEvent(e, deafP)) fireOnce("deaf", onDeaf);
   });
   uIOhook.on("mousedown", (e) => {
     const micP = parseAccel(micAccel);
     const deafP = parseAccel(deafAccel);
-    if (micP && isMouseKey(micP.key) && matchMouseEvent(e, micP)) {
-      fireOnce("mic", onMic);
-    } else if (deafP && isMouseKey(deafP.key) && matchMouseEvent(e, deafP)) {
-      fireOnce("deaf", onDeaf);
-    }
+    if (micP && isMouseKey(micP.key) && matchMouseEvent(e, micP)) fireOnce("mic", onMic);
+    else if (deafP && isMouseKey(deafP.key) && matchMouseEvent(e, deafP)) fireOnce("deaf", onDeaf);
   });
   try {
     uIOhook.start();
     uioStarted = true;
-    console.log("[hotkeys] uiohook started (global keyboard backup + mouse)");
+    console.log("[hotkeys] uiohook global listener started");
   } catch (e) {
     console.warn("[hotkeys] uiohook start failed", e.message);
   }
@@ -172,12 +170,10 @@ function registerShortcuts(opts) {
   const micIsMouse = !!(micP && isMouseKey(micP.key));
   const deafIsMouse = !!(deafP && isMouseKey(deafP.key));
 
-  // Klavye: Electron globalShortcut (odak başka pencerede / çoğu oyunda çalışır)
+  // Keyboard via Electron (works unfocused for most apps)
   if (micP && !micIsMouse) {
     try {
-      const ok = globalShortcut.register(micAccel, () => {
-        if (typeof onMic === "function") onMic();
-      });
+      const ok = globalShortcut.register(micAccel, () => fireOnce("mic", onMic));
       if (!ok) console.warn("[hotkeys] mic register failed:", micAccel);
     } catch (e) {
       console.warn("[hotkeys] mic", micAccel, e.message);
@@ -185,21 +181,18 @@ function registerShortcuts(opts) {
   }
   if (deafP && !deafIsMouse && deafAccel !== micAccel) {
     try {
-      const ok = globalShortcut.register(deafAccel, () => {
-        if (typeof onDeaf === "function") onDeaf();
-      });
+      const ok = globalShortcut.register(deafAccel, () => fireOnce("deaf", onDeaf));
       if (!ok) console.warn("[hotkeys] deaf register failed:", deafAccel);
     } catch (e) {
       console.warn("[hotkeys] deaf", deafAccel, e.message);
     }
   }
 
-  // Mouse 4/5: globalShortcut desteklemez → uiohook
-  // Ayrıca klavye için de uiohook yedek (exclusive fullscreen oyunlar Electron kısayolunu yutarsa)
+  // Always start uiohook when available: mouse buttons + game keyboard backup
   if (uIOhook) {
     ensureUiohook();
   } else if (micIsMouse || deafIsMouse) {
-    console.warn("[hotkeys] Mouse4/5 requires uiohook-napi — package missing");
+    console.warn("[hotkeys] Mouse buttons need uiohook-napi");
   }
 }
 
@@ -207,7 +200,6 @@ function unregisterAll() {
   try {
     globalShortcut.unregisterAll();
   } catch {}
-  // keep uiohook running but clear handlers by zeroing accel? better stop if no need
   micAccel = "";
   deafAccel = "";
   onMic = null;
