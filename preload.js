@@ -59,6 +59,29 @@ contextBridge.exposeInMainWorld("api", {
   // media / files
   pickScreenSources: () => ipcRenderer.invoke("pick-screen-sources"),
   setScreenSource: (id) => ipcRenderer.invoke("set-screen-source", id),
+  systemAudioStart: () => ipcRenderer.invoke("system-audio-start"),
+  systemAudioStop: () => ipcRenderer.invoke("system-audio-stop"),
+  systemAudioStatus: () => ipcRenderer.invoke("system-audio-status"),
+  onSystemAudioMeta: (cb) => {
+    const h = (_e, data) => cb(data);
+    ipcRenderer.on("system-audio-meta", h);
+    return () => ipcRenderer.removeListener("system-audio-meta", h);
+  },
+  onSystemAudioPcm: (cb) => {
+    const h = (_e, data) => cb(data);
+    ipcRenderer.on("system-audio-pcm", h);
+    return () => ipcRenderer.removeListener("system-audio-pcm", h);
+  },
+  onSystemAudioStopped: (cb) => {
+    const h = (_e, data) => cb(data);
+    ipcRenderer.on("system-audio-stopped", h);
+    return () => ipcRenderer.removeListener("system-audio-stopped", h);
+  },
+  onSystemAudioError: (cb) => {
+    const h = (_e, data) => cb(data);
+    ipcRenderer.on("system-audio-error", h);
+    return () => ipcRenderer.removeListener("system-audio-error", h);
+  },
   pickFile: () => ipcRenderer.invoke("file-pick"),
   readFileChunk: (filePath, offset, length) =>
     ipcRenderer.invoke("file-read-chunk", { filePath, offset, length }),

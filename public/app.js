@@ -268,6 +268,9 @@
   let micGain = null;
   /** @type {MediaStream | null} */
   let screenStream = null;
+  /** Native WASAPI loopback → MediaStreamTrack (Chromium loopback yedek) */
+  let nativeSysAudio = null; // { track, stop }
+  let unsubSysAudio = [];
 
   let micOn = true;
   let deafened = false;
@@ -3212,6 +3215,7 @@
       for (const u of mediaCalls.keys()) notify.add(u);
       for (const u of notify) sendTo(u, { type: "screen-stop" });
     }
+    stopNativeSystemAudio();
     if (screenStream) {
       screenStream.getTracks().forEach((t) => t.stop());
       screenStream = null;
@@ -3683,6 +3687,199 @@
     }
   }
 
+  /**
+   * Native WASAPI default-output → MediaStreamTrack.
+   * Chromium loopback many multi-device PCs'te NotReadableError veriyor.
+   */
+  function stopNativeSystemAudio() {
+    try {
+      unsubSysAudio.forEach((u) => {
+        try {
+          u();
+        } catch {}
+      });
+    } catch {}
+    unsubSysAudio = [];
+    if (nativeSysAudio) {
+      try {
+        nativeSysAudio.stop();
+      } catch {}
+      nativeSysAudio = null;
+    }
+    try {
+      if (api.systemAudioStop) api.systemAudioStop();
+    } catch {}
+  }
+
+  function startNativeSystemAudioTrack() {
+    return new Promise((resolve) => {
+      if (!api.systemAudioStart) {
+        resolve(null);
+        return;
+      }
+      stopNativeSystemAudio();
+
+      let settled = false;
+      const finish = (val) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(val);
+      };
+      const timer = setTimeout(() => finish(null), 4000);
+
+      const queue = []; // Float32 interleaved stereo chunks
+      let queueFrames = 0;
+      const maxQueueFrames = 48000 * 0.35; // ~350ms cap
+
+      const pushPcm = (buf) => {
+        // IPC: ArrayBuffer | Uint8Array | {type:'Buffer',data:number[]}
+        let u8;
+        if (!buf) return;
+        if (buf instanceof ArrayBuffer) u8 = new Uint8Array(buf);
+        else if (ArrayBuffer.isView(buf))
+          u8 = new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
+        else if (buf.type === "Buffer" && Array.isArray(buf.data))
+          u8 = Uint8Array.from(buf.data);
+        else if (buf.data && ArrayBuffer.isView(buf.data))
+          u8 = new Uint8Array(buf.data.buffer, buf.data.byteOffset, buf.data.byteLength);
+        else return;
+        const n = Math.floor(u8.byteLength / 4) * 4;
+        if (n < 8) return;
+        // Copy into own buffer so IPC memory can be reused
+        const copy = new Float32Array(n / 4);
+        copy.set(new Float32Array(u8.buffer, u8.byteOffset, n / 4));
+        queue.push(copy);
+        queueFrames += copy.length / 2;
+        while (queueFrames > maxQueueFrames && queue.length > 1) {
+          const drop = queue.shift();
+          queueFrames -= drop.length / 2;
+        }
+      };
+
+      if (api.onSystemAudioPcm) {
+        unsubSysAudio.push(api.onSystemAudioPcm((data) => pushPcm(data)));
+      }
+      if (api.onSystemAudioError) {
+        unsubSysAudio.push(
+          api.onSystemAudioError((e) => {
+            console.warn("[sysaudio]", e);
+            finish(null);
+          })
+        );
+      }
+      if (api.onSystemAudioStopped) {
+        unsubSysAudio.push(
+          api.onSystemAudioStopped(() => {
+            /* track ends separately */
+          })
+        );
+      }
+
+      const onMeta = async (meta) => {
+        if (!meta || !meta.sampleRate) {
+          finish(null);
+          return;
+        }
+        try {
+          const sr = meta.sampleRate;
+          const ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: sr });
+          try {
+            await ctx.resume();
+          } catch {}
+          const dest = ctx.createMediaStreamDestination();
+          const bufferSize = 2048;
+          const proc = ctx.createScriptProcessor(bufferSize, 0, 2);
+          let readChunk = null;
+          let readPos = 0; // index in Float32 interleaved
+
+          proc.onaudioprocess = (ev) => {
+            const L = ev.outputBuffer.getChannelData(0);
+            const R = ev.outputBuffer.getChannelData(1);
+            const n = L.length;
+            for (let i = 0; i < n; i++) {
+              if (!readChunk || readPos >= readChunk.length) {
+                readChunk = queue.shift() || null;
+                readPos = 0;
+                if (!readChunk) {
+                  L[i] = 0;
+                  R[i] = 0;
+                  continue;
+                }
+                queueFrames -= readChunk.length / 2;
+              }
+              L[i] = readChunk[readPos++];
+              R[i] = readChunk[readPos++];
+            }
+          };
+
+          // MediaStreamDestination + silent path so ScriptProcessor keeps running
+          proc.connect(dest);
+          const mute = ctx.createGain();
+          mute.gain.value = 0;
+          proc.connect(mute);
+          mute.connect(ctx.destination);
+
+          const track = dest.stream.getAudioTracks()[0];
+          if (!track) {
+            try {
+              ctx.close();
+            } catch {}
+            finish(null);
+            return;
+          }
+          try {
+            track.contentHint = "music";
+          } catch {}
+          track.enabled = true;
+
+          const handle = {
+            track,
+            stop: () => {
+              try {
+                track.stop();
+              } catch {}
+              try {
+                proc.disconnect();
+              } catch {}
+              try {
+                mute.disconnect();
+              } catch {}
+              try {
+                ctx.close();
+              } catch {}
+              try {
+                if (api.systemAudioStop) api.systemAudioStop();
+              } catch {}
+            },
+          };
+          nativeSysAudio = handle;
+          finish(handle);
+        } catch (e) {
+          console.warn("native sysaudio ctx", e);
+          finish(null);
+        }
+      };
+
+      if (api.onSystemAudioMeta) {
+        unsubSysAudio.push(api.onSystemAudioMeta(onMeta));
+      }
+
+      Promise.resolve(api.systemAudioStart())
+        .then((res) => {
+          if (!res || !res.ok) {
+            console.warn("systemAudioStart", res);
+            finish(null);
+          }
+          // meta event will finish; if already running with meta, may need status
+        })
+        .catch((e) => {
+          console.warn("systemAudioStart err", e);
+          finish(null);
+        });
+    });
+  }
+
   async function startScreenShare() {
     const targets = [];
     if (callWith) targets.push(callWith);
@@ -3736,52 +3933,58 @@
           const video = qualityConstraints(q, fps);
           const wantSysAudio = !!(el.screenSystemAudio && el.screenSystemAudio.checked);
 
-          // Varsayılan çıkış (loopback): audio true → main handler WASAPI
-          // Tüm ekran / pencere fark etmez; ses çıkış aygıtından gelir
-          try {
-            screenStream = await navigator.mediaDevices.getDisplayMedia({
-              video: true,
-              audio: wantSysAudio
-                ? {
-                    // Chromium'a audioRequested=true sinyali; echo kapat (sistem mix)
-                    echoCancellation: false,
-                    noiseSuppression: false,
-                    autoGainControl: false,
-                  }
-                : false,
-            });
-          } catch (err1) {
-            if (wantSysAudio) {
-              console.warn("Sesli ekran başarısız, audio:true dene:", err1);
-              try {
-                screenStream = await navigator.mediaDevices.getDisplayMedia({
-                  video: true,
-                  audio: true,
-                });
-              } catch (err2) {
-                console.warn("Sesli ekran tamamen başarısız, sadece video:", err2);
-                screenStream = await navigator.mediaDevices.getDisplayMedia({
-                  video: true,
-                  audio: false,
-                });
-                renderMessage({ type: "system", text: t("screenNoAudio") });
-              }
-            } else {
-              throw err1;
-            }
-          }
+          // 1) Görüntü: her zaman video-only (ses ayrı — Chromium loopback bu PC'lerde kırık)
+          screenStream = await navigator.mediaDevices.getDisplayMedia({
+            video: true,
+            audio: false,
+          });
 
           if (!screenStream || !screenStream.getVideoTracks().length) {
             throw new Error("No video track from getDisplayMedia");
           }
 
-          if (!wantSysAudio) {
-            screenStream.getAudioTracks().forEach((t) => {
+          // 2) Ses: native WASAPI varsayılan çıkış (loopback)
+          let audioTracks = [];
+          if (wantSysAudio) {
+            // Önce native (güvenilir)
+            const native = await startNativeSystemAudioTrack();
+            if (native && native.track && native.track.readyState === "live") {
+              audioTracks = [native.track];
               try {
-                t.stop();
-                screenStream.removeTrack(t);
+                screenStream.addTrack(native.track);
               } catch {}
-            });
+              console.log("[screen] native WASAPI loopback OK", native.track.label || native.track.id);
+            } else {
+              // Yedek: Chromium loopback (çoğu kurulumda NotReadableError)
+              try {
+                const withAudio = await navigator.mediaDevices.getDisplayMedia({
+                  video: true,
+                  audio: {
+                    echoCancellation: false,
+                    noiseSuppression: false,
+                    autoGainControl: false,
+                  },
+                });
+                const a = withAudio.getAudioTracks().filter((t) => t.readyState === "live");
+                // video yedek stream'i kapat; sadece sesi al
+                withAudio.getVideoTracks().forEach((t) => {
+                  try {
+                    t.stop();
+                  } catch {}
+                });
+                if (a.length) {
+                  audioTracks = a;
+                  a.forEach((t) => {
+                    try {
+                      screenStream.addTrack(t);
+                    } catch {}
+                  });
+                  console.log("[screen] chromium loopback OK");
+                }
+              } catch (errLb) {
+                console.warn("[screen] chromium loopback fail", errLb);
+              }
+            }
           }
 
           const track = screenStream.getVideoTracks()[0];
@@ -3792,15 +3995,15 @@
               frameRate: { ideal: fps, max: fps },
             });
           } catch {}
-          screenStream.getAudioTracks().forEach((t) => {
+          audioTracks.forEach((t) => {
             try {
               t.enabled = true;
               t.contentHint = "music";
             } catch {}
           });
 
-          const audioTracks = screenStream.getAudioTracks().filter((t) => t.readyState === "live");
-          // Video+ses tek stream (PeerJS tek call) + ses ayrı yedek call (bazı NAT/codec yolları)
+          audioTracks = audioTracks.filter((t) => t.readyState === "live");
+          // Video+ses tek stream (PeerJS tek call) + ses ayrı yedek call
           const fullStream = new MediaStream([
             ...screenStream.getVideoTracks(),
             ...audioTracks,
@@ -3821,7 +4024,6 @@
                 screenCalls.set(target, sc);
                 setTimeout(() => optimizeScreenSender(sc, q, fps), 400);
               }
-              // Yedek: yalnızca sistem sesi (görüntü stream'inden bağımsız iletim)
               if (audioTracks.length) {
                 try {
                   const audioOnly = new MediaStream(audioTracks.map((t) => t.clone()));
@@ -3865,6 +4067,7 @@
             console.log("[screen] audioTracks", audioTracks.length, audioTracks.map((x) => x.label || x.id));
           }
         } catch (err) {
+          stopNativeSystemAudio();
           if (screenStream) {
             try {
               screenStream.getTracks().forEach((t) => t.stop());
@@ -3886,6 +4089,7 @@
   }
 
   function stopScreen() {
+    stopNativeSystemAudio();
     if (screenStream) {
       screenStream.getTracks().forEach((t) => t.stop());
       screenStream = null;

@@ -1,5 +1,15 @@
 # Changelog
 
+## 4.8.2
+
+### Native WASAPI system audio (fixes “ses yakalanamadı”)
+
+- Root cause: Chromium `getDisplayMedia` + `audio: "loopback"` fails on multi-device PCs with `NotReadableError: Could not start audio source` (video OK, audio never starts)
+- **Fix:** ship `assets/bin/wasapi-loopback.exe` — real Windows WASAPI default-render loopback → PCM → Web Audio MediaStreamTrack → PeerJS
+- Screen share: video via getDisplayMedia (reliable) + **native default-output mix** when “sistem sesi” is on
+- Chromium loopback kept only as last-resort fallback
+- Full screen / window share use the same audio path (tied to Windows default playback device)
+
 ## 4.8.1
 
 ### Default-output loopback + mic toggle SFX

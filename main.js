@@ -38,6 +38,7 @@ const {
   setupDisplayMedia,
   setPendingScreenSourceId,
 } = require("./main/display-media");
+const systemAudio = require("./main/system-audio");
 const IS_UI_TEST = process.env.HEARTH_UI_TEST === "1" || process.env.HEARTH_UI_TEST === "true";
 
 /** Production'da console gürültüsünü azalt (UI test / dev açık kalsın) */
@@ -548,6 +549,9 @@ app.whenReady().then(async () => {
 
 app.on("will-quit", () => {
   try {
+    systemAudio.stopSystemAudio("quit");
+  } catch {}
+  try {
     hotkeys.dispose();
   } catch {}
   try {
@@ -674,6 +678,22 @@ ipcMain.handle("set-screen-source", (_e, id) => {
   setPendingScreenSourceId(id || null);
   return true;
 });
+
+// Native WASAPI loopback (default output mix) — Chromium loopback yedek/alternatif
+systemAudio.setEmitter((channel, data) => {
+  try {
+    if (win && !win.isDestroyed()) win.webContents.send(channel, data);
+  } catch {}
+});
+ipcMain.handle("system-audio-start", () => systemAudio.startSystemAudio());
+ipcMain.handle("system-audio-stop", () => {
+  systemAudio.stopSystemAudio("ipc");
+  return true;
+});
+ipcMain.handle("system-audio-status", () => ({
+  running: systemAudio.isRunning(),
+  helper: systemAudio.helperPath(),
+}));
 
 ipcMain.handle("file-pick", async () => {
   const res = await dialog.showOpenDialog(win, {
