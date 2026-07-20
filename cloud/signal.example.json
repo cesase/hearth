@@ -5,6 +5,7 @@
   "secure": false,
   "peerPath": "/peerjs",
   "presencePath": "/presence",
+  "authToken": "UZUN_RASTGELE_ORTAK_TOKEN",
   "embed": false,
-  "note": "enabled:false = public PeerJS (şehirler arası varsayılan). LAN/VPS için enabled:true ve TÜM arkadaşlarda aynı host IP/domain."
+  "note": "enabled:false = public PeerJS. LAN/VPS için enabled:true; VPS'te HEARTH_SIGNAL_TOKEN ile authToken aynı olmalı."
 }

@@ -10,6 +10,7 @@
     "secure": false,
     "peerPath": "/peerjs",
     "presencePath": "/presence",
+    "authToken": "UZUN_RASTGELE_ORTAK_TOKEN",
     "embed": true,
     "note": "embed:true → Electron yerel signal açar (127.0.0.1). LAN/VPS için host=IP veya domain, embed:false, tüm arkadaşlar aynı host."
   }

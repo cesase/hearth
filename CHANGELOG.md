@@ -1,5 +1,21 @@
 # Changelog
 
+## 4.9.0
+
+### Security, identity and transfer hardening
+
+- Upgraded Electron to 43.1.1, electron-builder to 26.15.3 and Playwright to 1.61.1; npm audit is clean.
+- Enabled Electron renderer sandboxing, denied unexpected navigation/popups and restricted media permissions to the app window.
+- Cloud sessions now use random per-session PeerJS IDs stored in the authenticated profile; unknown peers and spoofed call metadata are rejected.
+- Incoming peers are no longer added as friends automatically.
+- File transfers now use main-process capability tokens, a 512 MB limit, ordered bounded chunks and end-to-end SHA-256 verification.
+- File names, avatars, chat payloads, GIF URLs, reactions, timestamps and presence values are bounded and validated.
+- Microphone capture and AudioContext resources are released when calls end; 0% volume settings now work correctly.
+- Group call invitations carry validated membership metadata and synchronize missing local group records.
+- Fixed Supabase presence status shadowing and hardened friendship/group/signaling RLS policies.
+- Presence WebSocket now supports a shared deployment token, rejects username takeover, rate-limits clients and removes stale sockets.
+- Added JavaScript syntax checks, signal security tests and a fixed Electron UI smoke harness.
+
 ## 4.8.2
 
 ### Native WASAPI system audio (fixes “ses yakalanamadı”)

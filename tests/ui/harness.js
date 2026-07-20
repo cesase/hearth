@@ -34,19 +34,22 @@ async function launchHearth(opts = {}) {
   fs.mkdirSync(userData, { recursive: true });
 
   const headed = !!(opts.headed || process.argv.includes("--headed"));
+  const launchEnv = {
+    ...process.env,
+    HEARTH_USER_DATA: userData,
+    HEARTH_UI_TEST: "1",
+    ELECTRON_DISABLE_SECURITY_WARNINGS: "true",
+  };
+  // Bazı CI/ajan ortamları Electron'u Node kipine zorlar; gerçek uygulama
+  // süreci ve Playwright CDP bağlantısı için bu değişken aktarılmamalı.
+  delete launchEnv.ELECTRON_RUN_AS_NODE;
 
   const electronApp = await electron.launch({
     executablePath: electronBinary(),
     args: [ROOT],
     cwd: ROOT,
     timeout: 90000,
-    env: {
-      ...process.env,
-      HEARTH_USER_DATA: userData,
-      HEARTH_UI_TEST: "1",
-      // electron-updater / telemetry gürültüsü
-      ELECTRON_DISABLE_SECURITY_WARNINGS: "true",
-    },
+    env: launchEnv,
   });
 
   const win = await electronApp.firstWindow({ timeout: 60000 });

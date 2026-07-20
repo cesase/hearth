@@ -3,16 +3,20 @@ const { contextBridge, ipcRenderer, webUtils } = require("electron");
 contextBridge.exposeInMainWorld("api", {
   isDesktop: true,
 
-  /** Sürükle-bırak File nesnesinden gerçek disk yolu (Electron) */
-  pathForFile: (file) => {
+  /** Sürükle-bırak dosyasına ana süreçte kısa ömürlü okuma izni oluştur. */
+  authorizeDroppedFile: async (file) => {
     try {
       if (!file) return "";
+      let filePath = "";
       if (typeof webUtils?.getPathForFile === "function") {
-        return webUtils.getPathForFile(file) || "";
+        filePath = webUtils.getPathForFile(file) || "";
+      } else {
+        filePath = file.path || "";
       }
-      return file.path || "";
+      if (!filePath) return null;
+      return ipcRenderer.invoke("file-authorize-dropped", filePath);
     } catch {
-      return file?.path || "";
+      return null;
     }
   },
 
@@ -23,6 +27,7 @@ contextBridge.exposeInMainWorld("api", {
   register: (data) => ipcRenderer.invoke("auth-register", data),
   login: (data) => ipcRenderer.invoke("auth-login", data),
   logout: () => ipcRenderer.invoke("auth-logout"),
+  bindSession: (userId) => ipcRenderer.invoke("auth-bind-cloud", userId),
 
   // settings / profile
   getSettings: (userId) => ipcRenderer.invoke("settings-get", userId),
@@ -55,6 +60,7 @@ contextBridge.exposeInMainWorld("api", {
     ipcRenderer.invoke("groups-create", { userId, name, members }),
   deleteGroup: (userId, groupId) => ipcRenderer.invoke("groups-delete", { userId, groupId }),
   getGroup: (userId, groupId) => ipcRenderer.invoke("groups-get", { userId, groupId }),
+  upsertGroup: (userId, group) => ipcRenderer.invoke("groups-upsert", { userId, group }),
 
   // media / files
   pickScreenSources: () => ipcRenderer.invoke("pick-screen-sources"),
@@ -83,18 +89,19 @@ contextBridge.exposeInMainWorld("api", {
     return () => ipcRenderer.removeListener("system-audio-error", h);
   },
   pickFile: () => ipcRenderer.invoke("file-pick"),
-  readFileChunk: (filePath, offset, length) =>
-    ipcRenderer.invoke("file-read-chunk", { filePath, offset, length }),
-  saveFileStart: (name, auto = true) => ipcRenderer.invoke("file-save-start", { name, auto }),
-  saveFileChunk: (savePath, b64, offset) =>
-    ipcRenderer.invoke("file-save-chunk", { savePath, b64, offset }),
-  saveFileAuto: (name) => ipcRenderer.invoke("file-save-auto", { name }),
+  readFileChunk: (token, offset, length) =>
+    ipcRenderer.invoke("file-read-chunk", { token, offset, length }),
+  hashFile: (token) => ipcRenderer.invoke("file-hash", token),
+  saveFileStart: (name, size, auto = true) => ipcRenderer.invoke("file-save-start", { name, size, auto }),
+  saveFileChunk: (token, b64, offset) =>
+    ipcRenderer.invoke("file-save-chunk", { token, b64, offset }),
+  finalizeFileSave: (token, sha256) => ipcRenderer.invoke("file-save-finalize", { token, sha256 }),
+  abortFileSave: (token) => ipcRenderer.invoke("file-save-abort", token),
   saveAvatarDataUrl: (userId, dataUrl) =>
     ipcRenderer.invoke("avatar-save-dataurl", { userId, dataUrl }),
-  openPath: (p) => ipcRenderer.invoke("open-path", p),
+  openPath: (token) => ipcRenderer.invoke("open-path", token),
   openExternal: (url) => ipcRenderer.invoke("open-external", url),
-  filePreview: (filePath) => ipcRenderer.invoke("file-preview-dataurl", filePath),
-  deletePath: (p) => ipcRenderer.invoke("delete-path", p),
+  filePreview: (token) => ipcRenderer.invoke("file-preview-dataurl", token),
   isWindowFocused: () => ipcRenderer.invoke("window-focused"),
 
   notifyIncoming: () => ipcRenderer.invoke("notify-incoming"),

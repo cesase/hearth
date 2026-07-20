@@ -106,16 +106,13 @@
 
     try {
       // Önce username müsait mi?
-      const { data: existing, error: checkErr } = await STATE.client
-        .from("profiles")
-        .select("id")
-        .eq("username", un)
-        .maybeSingle();
+      const { data: available, error: checkErr } = await STATE.client
+        .rpc("is_username_available", { candidate_username: un });
       if (checkErr) {
         // Tablo yoksa / ağ hatası — anlamlı mesaj
         throw checkErr;
       }
-      if (existing) throw new Error("Bu kullanıcı adı alınmış");
+      if (!available) throw new Error("Bu kullanıcı adı alınmış");
     } catch (e) {
       throw new Error(friendlyNetworkError(e));
     }
@@ -238,13 +235,15 @@
     const uid = STATE.session.user.id;
     const { data, error } = await STATE.client
       .from("friendships")
-      .select("id, status, friend:friend_id(id, username, display_name, about, status, status_text, socials, avatar_url, peer_id, last_seen)")
-      .eq("user_id", uid)
+      .select("id, status, user_id, friend_id, requester:user_id(id, username, display_name, about, status, status_text, socials, avatar_url, peer_id, last_seen), recipient:friend_id(id, username, display_name, about, status, status_text, socials, avatar_url, peer_id, last_seen)")
+      .or(`user_id.eq.${uid},friend_id.eq.${uid}`)
       .eq("status", "accepted");
     if (error) throw error;
-    return (data || []).map((row) => {
-      const f = row.friend || {};
-      return {
+    const byUsername = new Map();
+    for (const row of data || []) {
+      const f = row.user_id === uid ? row.recipient || {} : row.requester || {};
+      if (!f.username) continue;
+      byUsername.set(f.username, {
         username: f.username,
         displayName: f.display_name || f.username,
         about: f.about || "",
@@ -257,8 +256,9 @@
         lastSeen: f.last_seen,
         addedAt: Date.now(),
         friendshipStatus: "accepted",
-      };
-    });
+      });
+    }
+    return [...byUsername.values()];
   }
 
   /** Gelen istekler: friend_id = ben, status = pending */
@@ -326,6 +326,7 @@
       .eq("user_id", profile.id)
       .eq("friend_id", uid)
       .maybeSingle();
+    if (reverse?.status === "accepted") throw new Error("Zaten arkadaşsınız.");
     if (reverse?.status === "pending") {
       await respondFriendRequest(profile.username, true);
       return {
@@ -364,18 +365,13 @@
         .eq("status", "pending");
       return { rejected: true };
     }
-    // A→B pending → accepted + B→A accepted
+    // Tek arkadaşlık satırı iki taraf için de görünür; alıcı isteği kabul eder.
     const { error: e1 } = await STATE.client
       .from("friendships")
       .update({ status: "accepted" })
       .eq("user_id", profile.id)
       .eq("friend_id", uid);
     if (e1) throw e1;
-    const { error: e2 } = await STATE.client.from("friendships").upsert(
-      { user_id: uid, friend_id: profile.id, status: "accepted" },
-      { onConflict: "user_id,friend_id" }
-    );
-    if (e2) throw e2;
     return {
       accepted: true,
       username: profile.username,
@@ -412,7 +408,7 @@
    * Presence: her kullanıcı kendi kanalında "online" track eder;
    * arkadaş kanallarına subscribe olur.
    */
-  async function startPresence({ username, status, statusText, onChange }) {
+  async function startPresence({ username, status: initialStatus, statusText, onChange }) {
     if (!STATE.client || !STATE.session) return () => {};
     if (STATE.presenceChannel) {
       try {
@@ -438,17 +434,17 @@
       if (typeof onChange === "function") onChange(STATE.onlineMap);
     });
 
-    await channel.subscribe(async (status) => {
-      if (status === "SUBSCRIBED") {
+    await channel.subscribe(async (subscribeState) => {
+      if (subscribeState === "SUBSCRIBED") {
         await channel.track({
           username,
-          status: status || "online",
+          status: initialStatus || "online",
           statusText: statusText || "",
           at: Date.now(),
         });
         // last_seen DB
         try {
-          await updateProfile({ status: status || "online", statusText: statusText || "" });
+          await updateProfile({ status: initialStatus || "online", statusText: statusText || "" });
         } catch {}
       }
     });

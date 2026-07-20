@@ -7,6 +7,22 @@ function root() {
   return app.getPath("userData");
 }
 
+function normalizeUserId(userId) {
+  const id = String(userId || "").trim();
+  if (!/^[a-zA-Z0-9_-]{8,64}$/.test(id)) {
+    throw new Error("Geçersiz kullanıcı kimliği.");
+  }
+  return id;
+}
+
+function normalizeUsername(username) {
+  const value = String(username || "").trim().toLowerCase();
+  if (!/^[a-z0-9._]{3,20}$/.test(value)) {
+    throw new Error("Geçersiz kullanıcı adı.");
+  }
+  return value;
+}
+
 function ensureDir(p) {
   if (!fs.existsSync(p)) fs.mkdirSync(p, { recursive: true });
 }
@@ -20,20 +36,21 @@ function sessionPath() {
 }
 
 function settingsPath(userId) {
-  return path.join(root(), "profiles", userId, "settings.json");
+  return path.join(root(), "profiles", normalizeUserId(userId), "settings.json");
 }
 
 function friendsPath(userId) {
-  return path.join(root(), "profiles", userId, "friends.json");
+  return path.join(root(), "profiles", normalizeUserId(userId), "friends.json");
 }
 
 function chatPath(userId, friendUsername) {
   const safe = String(friendUsername).toLowerCase().replace(/[^a-z0-9._-]/gi, "_");
-  return path.join(root(), "profiles", userId, "chats", `${safe}.json`);
+  if (!safe || safe.length > 80) throw new Error("Geçersiz sohbet kimliği.");
+  return path.join(root(), "profiles", normalizeUserId(userId), "chats", `${safe}.json`);
 }
 
 function avatarDir(userId) {
-  return path.join(root(), "profiles", userId, "avatar");
+  return path.join(root(), "profiles", normalizeUserId(userId), "avatar");
 }
 
 function readJson(file, fallback) {
@@ -45,7 +62,15 @@ function readJson(file, fallback) {
 
 function writeJson(file, data) {
   ensureDir(path.dirname(file));
-  fs.writeFileSync(file, JSON.stringify(data, null, 2), "utf8");
+  const tmp = `${file}.tmp-${process.pid}-${crypto.randomBytes(4).toString("hex")}`;
+  try {
+    fs.writeFileSync(tmp, JSON.stringify(data, null, 2), "utf8");
+    fs.renameSync(tmp, file);
+  } finally {
+    try {
+      if (fs.existsSync(tmp)) fs.unlinkSync(tmp);
+    } catch {}
+  }
 }
 
 function hashPassword(password, salt) {
@@ -55,8 +80,14 @@ function hashPassword(password, salt) {
 }
 
 function verifyPassword(password, salt, hash) {
-  const h = crypto.pbkdf2Sync(password, salt, 120000, 32, "sha256").toString("hex");
-  return h === hash;
+  const actual = crypto.pbkdf2Sync(password, salt, 120000, 32, "sha256");
+  let expected;
+  try {
+    expected = Buffer.from(String(hash || ""), "hex");
+  } catch {
+    return false;
+  }
+  return expected.length === actual.length && crypto.timingSafeEqual(actual, expected);
 }
 
 function listUsers() {
@@ -185,7 +216,7 @@ function getSettings(userId) {
 }
 
 function groupsPath(userId) {
-  return path.join(root(), "profiles", userId, "groups.json");
+  return path.join(root(), "profiles", normalizeUserId(userId), "groups.json");
 }
 
 function getGroups(userId) {
@@ -199,7 +230,7 @@ function saveGroups(userId, groups) {
 
 function createGroup(userId, { name, members }) {
   const list = getGroups(userId);
-  const mem = [...new Set((members || []).map((m) => String(m).toLowerCase().trim()).filter(Boolean))];
+  const mem = [...new Set((members || []).map((m) => normalizeUsername(m)))].slice(0, 12);
   if (mem.length < 1) throw new Error("Grup için en az 1 üye gerekir.");
   const id = "g_" + crypto.randomBytes(6).toString("hex");
   const group = {
@@ -209,6 +240,27 @@ function createGroup(userId, { name, members }) {
     createdAt: Date.now(),
   };
   list.unshift(group);
+  saveGroups(userId, list);
+  return group;
+}
+
+function upsertGroup(userId, { id, name, members, createdBy }) {
+  const groupId = String(id || "").trim();
+  if (!/^g_[a-f0-9]{12,64}$/i.test(groupId)) throw new Error("Geçersiz grup kimliği.");
+  const mem = [...new Set((members || []).map((m) => normalizeUsername(m)))].slice(0, 12);
+  if (!mem.length) throw new Error("Grup üyesi yok.");
+  const list = getGroups(userId);
+  const existing = list.findIndex((g) => g.id === groupId);
+  const group = {
+    id: groupId,
+    name: String(name || mem.join(", ")).trim().slice(0, 48) || "Grup",
+    members: mem,
+    createdBy: createdBy ? normalizeUsername(createdBy) : undefined,
+    createdAt: existing >= 0 ? list[existing].createdAt : Date.now(),
+    updatedAt: Date.now(),
+  };
+  if (existing >= 0) list[existing] = { ...list[existing], ...group };
+  else list.unshift(group);
   saveGroups(userId, list);
   return group;
 }
@@ -234,8 +286,7 @@ function getFriends(userId) {
 }
 
 function addFriend(userId, friend) {
-  const username = String(friend.username || "").trim().toLowerCase();
-  if (!username || username.length < 3) throw new Error("Geçerli bir kullanıcı adı gir.");
+  const username = normalizeUsername(friend.username);
   const me = listUsers().find((u) => u.id === userId);
   if (me && me.username === username) throw new Error("Kendini ekleyemezsin.");
   const friends = getFriends(userId);
@@ -366,12 +417,12 @@ function deleteChatMessage(userId, friendUsername, messageId) {
 }
 
 function getPins(userId, friendUsername) {
-  const file = path.join(root(), "profiles", userId, "pins", `${String(friendUsername).toLowerCase().replace(/[^a-z0-9._-]/gi, "_")}.json`);
+  const file = path.join(root(), "profiles", normalizeUserId(userId), "pins", `${String(friendUsername).toLowerCase().replace(/[^a-z0-9._-]/gi, "_")}.json`);
   return readJson(file, { pins: [] }).pins || [];
 }
 
 function setPins(userId, friendUsername, pins) {
-  const file = path.join(root(), "profiles", userId, "pins", `${String(friendUsername).toLowerCase().replace(/[^a-z0-9._-]/gi, "_")}.json`);
+  const file = path.join(root(), "profiles", normalizeUserId(userId), "pins", `${String(friendUsername).toLowerCase().replace(/[^a-z0-9._-]/gi, "_")}.json`);
   writeJson(file, { pins: pins.slice(0, 50) });
   return pins;
 }
@@ -409,5 +460,7 @@ module.exports = {
   createGroup,
   deleteGroup,
   getGroup,
+  upsertGroup,
   saveGroups,
+  normalizeUserId,
 };

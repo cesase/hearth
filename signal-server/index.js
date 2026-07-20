@@ -14,6 +14,8 @@ const { ExpressPeerServer } = require("peer");
 
 const PORT = Number(process.env.PORT || process.env.HEARTH_SIGNAL_PORT || 9000);
 const HOST = process.env.HOST || "0.0.0.0";
+const PRESENCE_TOKEN = String(process.env.HEARTH_SIGNAL_TOKEN || "");
+const ALLOWED_STATUSES = new Set(["online", "idle", "dnd", "invisible"]);
 
 const app = express();
 app.use(express.json({ limit: "32kb" }));
@@ -79,19 +81,26 @@ function send(ws, obj) {
 
 // Presence WS must not share `{ server, path }` with PeerJS — PeerJS rejects
 // unknown upgrade paths with 400. Route /presence first via noServer.
-const wss = new WebSocketServer({ noServer: true });
+const wss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024, perMessageDeflate: false });
 
 // Steal upgrade: presence first, then original PeerJS handlers
 const priorUpgrade = server.listeners("upgrade").slice();
 server.removeAllListeners("upgrade");
 server.on("upgrade", (req, socket, head) => {
   let pathname = "/";
+  let requestUrl;
   try {
-    pathname = new URL(req.url || "/", "http://localhost").pathname || "/";
+    requestUrl = new URL(req.url || "/", "http://localhost");
+    pathname = requestUrl.pathname || "/";
   } catch {
     pathname = String(req.url || "/").split("?")[0] || "/";
   }
   if (pathname === "/presence" || pathname.startsWith("/presence/")) {
+    if (PRESENCE_TOKEN && requestUrl?.searchParams.get("token") !== PRESENCE_TOKEN) {
+      socket.write("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n");
+      socket.destroy();
+      return;
+    }
     wss.handleUpgrade(req, socket, head, (ws) => {
       wss.emit("connection", ws, req);
     });
@@ -108,8 +117,23 @@ server.on("upgrade", (req, socket, head) => {
 
 wss.on("connection", (ws) => {
   let boundUser = null;
+  let rateWindow = Date.now();
+  let rateCount = 0;
+  ws.isAlive = true;
+  ws.on("pong", () => {
+    ws.isAlive = true;
+  });
 
   ws.on("message", (raw) => {
+    const now = Date.now();
+    if (now - rateWindow >= 10000) {
+      rateWindow = now;
+      rateCount = 0;
+    }
+    if (++rateCount > 120) {
+      ws.close(1008, "rate limit");
+      return;
+    }
     let msg;
     try {
       msg = JSON.parse(String(raw));
@@ -121,24 +145,23 @@ wss.on("connection", (ws) => {
     if (msg.type === "identify") {
       const username = String(msg.username || "")
         .trim()
-        .toLowerCase()
-        .replace(/[^a-z0-9._]/g, "");
-      if (username.length < 2) {
+        .toLowerCase();
+      if (!/^[a-z0-9._]{3,20}$/.test(username)) {
         send(ws, { type: "error", code: "BAD_USERNAME" });
         return;
       }
       const prev = presenceByUser.get(username);
       if (prev && prev.ws !== ws) {
-        try {
-          prev.ws.close();
-        } catch {}
+        send(ws, { type: "error", code: "USERNAME_IN_USE" });
+        ws.close(4009, "username in use");
+        return;
       }
       boundUser = username;
       presenceByUser.set(username, {
         ws,
         username,
-        displayName: String(msg.displayName || username).slice(0, 48),
-        status: msg.status || "online",
+        displayName: String(msg.displayName || username).trim().slice(0, 48) || username,
+        status: ALLOWED_STATUSES.has(msg.status) ? msg.status : "online",
         statusText: String(msg.statusText || "").slice(0, 80),
         at: Date.now(),
       });
@@ -155,7 +178,7 @@ wss.on("connection", (ws) => {
     if (msg.type === "status_update") {
       const meta = presenceByUser.get(boundUser);
       if (!meta) return;
-      if (msg.status) meta.status = String(msg.status);
+      if (ALLOWED_STATUSES.has(msg.status)) meta.status = msg.status;
       if (msg.statusText !== undefined) meta.statusText = String(msg.statusText).slice(0, 80);
       meta.at = Date.now();
       const out = JSON.stringify({
@@ -216,6 +239,21 @@ wss.on("connection", (ws) => {
     }
   });
 });
+
+const heartbeatTimer = setInterval(() => {
+  for (const ws of wss.clients) {
+    if (ws.isAlive === false) {
+      ws.terminate();
+      continue;
+    }
+    ws.isAlive = false;
+    try {
+      ws.ping();
+    } catch {}
+  }
+}, 30000);
+heartbeatTimer.unref();
+wss.on("close", () => clearInterval(heartbeatTimer));
 
 let listenAttempted = false;
 

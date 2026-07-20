@@ -20,6 +20,7 @@ npm start          # Electron (yerel signal gömülü: 127.0.0.1:9000)
 npm run signal     # Ayrı signal sunucusu (LAN/VPS; tüm arkadaşlar aynı host)
 npm run setup      # dist/Hearth-Setup.exe
 npm run pack       # dist/Hearth-Portable.exe
+npm test           # syntax + signal security tests
 ```
 
 Signal yapılandırması: `cloud/signal.example.json` veya `cloud/config.json` → `"signal"`.  
@@ -33,6 +34,8 @@ npm run ui:lab     # aynı, pencereyi sen de gör
 ```
 
 Detay: `tests/README.md` · çıktı: `tests/artifacts/latest.png`
+
+Son güvenlik/mimari inceleme: **[docs/AUDIT-2026-07-21.md](./docs/AUDIT-2026-07-21.md)**
 
 ### Mimari (Toju kalıpları)
 

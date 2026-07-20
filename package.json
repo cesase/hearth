@@ -1,6 +1,6 @@
 {
   "name": "hearth",
-  "version": "4.8.2",
+  "version": "4.9.0",
   "description": "Hearth - P2P sesli sohbet, ekran ve dosya",
   "main": "main.js",
   "author": "Faruk",
@@ -20,7 +20,10 @@
     "publish:win": "electron-builder --win nsis --x64 --publish always",
     "ui:smoke": "node tests/ui/smoke.spec.js",
     "ui:lab": "node tests/ui/smoke.spec.js --headed",
-    "ui:scenario": "node tests/ui/run-scenario.js"
+    "ui:scenario": "node tests/ui/run-scenario.js",
+    "check": "node scripts/check-js.js",
+    "test:signal": "node tests/signal/security.spec.js",
+    "test": "npm run check && npm run test:signal"
   },
   "build": {
     "appId": "com.hearth.app",
@@ -96,9 +99,9 @@
     }
   },
   "devDependencies": {
-    "electron": "^33.4.11",
-    "electron-builder": "^25.1.8",
-    "playwright": "^1.49.1",
+    "electron": "43.1.1",
+    "electron-builder": "26.15.3",
+    "playwright": "1.61.1",
     "rcedit": "^5.0.2"
   },
   "dependencies": {
@@ -109,7 +112,7 @@
     "ws": "^8.21.1"
   },
   "allowScripts": {
-    "electron@33.4.11": true,
+    "electron@43.1.1": true,
     "uiohook-napi@1.5.5": true
   }
 }

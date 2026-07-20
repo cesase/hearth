@@ -33,7 +33,7 @@ Media (audio/video/files) is always P2P — never through the signal process.
 | Layer | Owns |
 |-------|------|
 | `main.js` + `main/*` | Window, tray, icon, display-media singleton, IPC, auto-update, optional signal embed |
-| `preload.js` | `window.api` bridge only |
+| `preload.js` | Narrow `window.api` bridge; paths stay outside the renderer |
 | `public/app.js` | UI + PeerJS session (to be split into domains) |
 | `public/infrastructure/` | Presence WS client |
 | `public/cloud/` | Supabase client |
@@ -45,8 +45,10 @@ Media (audio/video/files) is always P2P — never through the signal process.
 
 1. **Display media handler** registered **once** per app run (`main/display-media.js`).
 2. On hangup / peer leave: clear **all** remote audio/video `srcObject`, peer voice elements, screen calls.
-3. File transfer: **admit once** (accept/reject); never leave `sendFileBusy` stuck after decline.
-4. Screen system audio: Electron `audio: "loopback"` when requested.
+3. File transfer: **admit once**, use capability tokens, ordered bounded chunks and SHA-256 finalization.
+4. Screen system audio: native WASAPI default-output loopback; Chromium capture is fallback only.
+5. Cloud PeerJS identity: random session ID published through the authenticated profile; incoming calls/data must match it.
+6. Renderer: sandboxed, context-isolated and unable to navigate away from the packaged app entry.
 
 ## What we will not import wholesale from Toju
 

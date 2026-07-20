@@ -17,14 +17,19 @@ function setPendingScreenSourceId(id) {
 }
 
 /**
- * @param {{ log?: (msg: string, err?: any) => void }} [opts]
+ * @param {{ log?: (msg: string, err?: any) => void, isTrustedWebContents?: (wc: Electron.WebContents) => boolean }} [opts]
  */
 function setupDisplayMedia(opts = {}) {
   const log = opts.log || (() => {});
+  const isTrustedWebContents = opts.isTrustedWebContents || (() => false);
   const ses = session.defaultSession;
 
-  ses.setPermissionRequestHandler((_wc, permission, callback) => {
-    if (permission === "media" || permission === "display-capture") {
+  ses.setPermissionCheckHandler((wc, permission) => {
+    return isTrustedWebContents(wc) && (permission === "media" || permission === "display-capture");
+  });
+
+  ses.setPermissionRequestHandler((wc, permission, callback) => {
+    if (isTrustedWebContents(wc) && (permission === "media" || permission === "display-capture")) {
       callback(true);
       return;
     }
@@ -49,14 +54,17 @@ function setupDisplayMedia(opts = {}) {
       };
 
       try {
+        // Ekran yakalama yalnızca kaynak seçici üzerinden verilen tek kullanımlık
+        // source id ile başlayabilir. Renderer'ın sessizce ilk ekranı seçmesini engeller.
+        if (!pendingScreenSourceId) {
+          respond({});
+          return;
+        }
         const sources = await desktopCapturer.getSources({
           types: ["screen", "window"],
           thumbnailSize: { width: 0, height: 0 },
         });
-        let source = sources[0];
-        if (pendingScreenSourceId) {
-          source = sources.find((s) => s.id === pendingScreenSourceId) || source;
-        }
+        const source = sources.find((s) => s.id === pendingScreenSourceId);
         pendingScreenSourceId = null;
         if (!source) {
           respond({});

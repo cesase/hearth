@@ -288,11 +288,15 @@
   /** @type {any} signal server cfg from main */
   let signalCfg = null;
   let stopPresenceWs = null;
+  let sessionPeerId = null;
+  const peerIdCache = new Map();
 
   // incoming file state
+  const MAX_TRANSFER_BYTES = 512 * 1024 * 1024;
   let recvFile = null;
   let sendFileBusy = false;
   let activeTransferId = null;
+  let activeTransferTarget = null;
   let transferCancelled = false;
   let noiseOn = true;
   let replyTo = null;
@@ -766,11 +770,32 @@
   }
 
   // ---------- utils ----------
-  async function peerIdOf(username) {
+  async function legacyPeerIdOf(username) {
     const raw = "ikili::user::" + String(username).trim().toLowerCase();
     const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(raw));
     const hex = [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
     return ("u" + hex).slice(0, 16);
+  }
+
+  async function peerIdOf(username, { refresh = false } = {}) {
+    const un = String(username || "").trim().toLowerCase();
+    if (!/^[a-z0-9._]{3,20}$/.test(un)) return null;
+    if (!cloudMode || !window.HearthCloud?.isEnabled()) return legacyPeerIdOf(un);
+    if (un === me?.username && sessionPeerId) return sessionPeerId;
+
+    const cached = peerIdCache.get(un);
+    if (!refresh && cached && Date.now() - cached.at < 10000) return cached.value;
+    try {
+      const profile = await window.HearthCloud.findByUsername(un);
+      const value = String(profile?.peer_id || "").trim();
+      if (!/^[a-zA-Z0-9_-]{8,64}$/.test(value)) return null;
+      peerIdCache.set(un, { value, at: Date.now() });
+      const friend = friends.find((f) => f.username === un);
+      if (friend) friend.peerId = value;
+      return value;
+    } catch {
+      return cached?.value || null;
+    }
   }
 
   function fmtTime(ts) {
@@ -1946,6 +1971,25 @@
     return processedMicStream;
   }
 
+  async function disposeMicGraph() {
+    const streams = [processedMicStream, rawMicStream];
+    processedMicStream = null;
+    rawMicStream = null;
+    micGain = null;
+    for (const stream of streams) {
+      try {
+        stream?.getTracks?.().forEach((track) => track.stop());
+      } catch {}
+    }
+    const ctx = audioCtx;
+    audioCtx = null;
+    if (ctx) {
+      try {
+        await ctx.close();
+      } catch {}
+    }
+  }
+
   function applyMicEnabled() {
     const on = micOn && !deafened;
     if (processedMicStream) {
@@ -1961,14 +2005,16 @@
   }
 
   function applyMicVolume(pct) {
-    const v = Math.max(0, Math.min(200, Number(pct) || 100));
+    const parsed = Number(pct);
+    const v = Math.max(0, Math.min(200, Number.isFinite(parsed) ? parsed : 100));
     if (el.micVol) el.micVol.value = String(v);
     if (el.micVolVal) el.micVolVal.textContent = v + "%";
     if (micGain) micGain.gain.value = v / 100;
   }
 
   function applyVoiceVolume(pct) {
-    const v = Math.max(0, Math.min(200, Number(pct) || 100));
+    const parsed = Number(pct);
+    const v = Math.max(0, Math.min(200, Number.isFinite(parsed) ? parsed : 100));
     if (el.outVol) el.outVol.value = String(v);
     if (el.outVolVal) el.outVolVal.textContent = v + "%";
     const vol = deafened ? 0 : Math.min(1, v / 100);
@@ -1980,7 +2026,8 @@
   }
 
   function applyScreenAudioVolume(pct) {
-    const v = Math.max(0, Math.min(200, Number(pct) || 100));
+    const parsed = Number(pct);
+    const v = Math.max(0, Math.min(200, Number.isFinite(parsed) ? parsed : 100));
     if (el.screenAudioVol) el.screenAudioVol.value = String(v);
     if (el.screenAudioVolVal) el.screenAudioVolVal.textContent = v + "%";
     if (el.remoteScreenAudio) {
@@ -2058,8 +2105,10 @@
 
   function toggleDeafen() {
     if (!deafened) {
-      preDeafenOutput = Number(el.outVol.value) || settings.outputVolume || 100;
-      preDeafenScreenVol = Number(el.screenAudioVol?.value) || settings.screenAudioVolume || 100;
+      const currentOutput = Number(el.outVol.value);
+      const currentScreen = Number(el.screenAudioVol?.value);
+      preDeafenOutput = Number.isFinite(currentOutput) ? currentOutput : (settings.outputVolume ?? 100);
+      preDeafenScreenVol = Number.isFinite(currentScreen) ? currentScreen : (settings.screenAudioVolume ?? 100);
       preDeafenMicOn = micOn;
       deafened = true;
       micOn = false;
@@ -2080,8 +2129,8 @@
       if (el.remoteAudio) el.remoteAudio.muted = false;
       if (el.remoteScreenAudio) el.remoteScreenAudio.muted = false;
       setPeerVoicesMuted(false);
-      applyVoiceVolume(preDeafenOutput || settings.outputVolume || 100);
-      applyScreenAudioVolume(preDeafenScreenVol || settings.screenAudioVolume || 100);
+      applyVoiceVolume(preDeafenOutput ?? settings.outputVolume ?? 100);
+      applyScreenAudioVolume(preDeafenScreenVol ?? settings.screenAudioVolume ?? 100);
       micOn = preDeafenMicOn;
       applyMicEnabled();
       setMicUi();
@@ -2094,6 +2143,8 @@
     setNoiseUi();
     settings.noiseSuppression = noiseOn;
     if (me) await api.saveSettings(me.id, { noiseSuppression: noiseOn });
+    // Mikrofon kapalıyken ayar değiştirmek capture başlatmamalı.
+    if (!inCall && !processedMicStream && !rawMicStream) return;
     // Yeniden bağla (görüşmedeyse stream yenilenir)
     try {
       const old = processedMicStream;
@@ -2127,14 +2178,19 @@
 
   function cancelTransfer(reason) {
     transferCancelled = true;
-    if (activeTransferId && activeFriend) {
-      sendTo(activeFriend, { type: "file-abort", id: activeTransferId, reason: reason || "cancelled" });
+    if (activeTransferId && activeTransferTarget) {
+      sendTo(activeTransferTarget, { type: "file-abort", id: activeTransferId, reason: reason || "cancelled" });
+      window.dispatchEvent(new CustomEvent("file-ready", {
+        detail: { id: activeTransferId, from: activeTransferTarget, aborted: true },
+      }));
     }
     if (recvFile) {
       sendTo(recvFile.from, { type: "file-abort", id: recvFile.id, reason: reason || "cancelled" });
+      if (recvFile.saveToken) void api.abortFileSave(recvFile.saveToken);
       recvFile = null;
     }
     activeTransferId = null;
+    activeTransferTarget = null;
     sendFileBusy = false;
     hideTransfer();
   }
@@ -2172,6 +2228,7 @@
     }
     conns.set(username, conn);
     conn._ikBound = true;
+    conn._hearthConnectingAt = conn._hearthConnectingAt || Date.now();
 
     const onOpen = async () => {
       setPresence(username, inCall && callWith === username ? "busy" : "online");
@@ -2200,12 +2257,36 @@
     conn.on("error", () => {});
   }
 
+  async function authorizedMessageKey(username, msg) {
+    if (!msg?.groupId) return username;
+    const groupId = String(msg.groupId);
+    if (!/^g_[a-f0-9]{12,64}$/i.test(groupId)) return null;
+    const group = groups.find((g) => g.id === groupId) || (await api.getGroup(me.id, groupId));
+    if (!group || !(group.members || []).includes(username)) return null;
+    return groupId;
+  }
+
+  function safeRemoteTime(value) {
+    const time = Number(value);
+    return Number.isFinite(time) && Math.abs(Date.now() - time) < 24 * 60 * 60 * 1000
+      ? time
+      : Date.now();
+  }
+
+  function safeGifUrl(value) {
+    try {
+      const url = new URL(String(value || ""));
+      const host = url.hostname.toLowerCase();
+      const allowed = host === "media.giphy.com" || host === "i.giphy.com" || host.endsWith(".tenor.com");
+      return url.protocol === "https:" && allowed && url.href.length <= 2048 ? url.href : null;
+    } catch {
+      return null;
+    }
+  }
+
   async function onData(username, raw) {
     // binary file chunk
-    if (raw instanceof ArrayBuffer || ArrayBuffer.isView(raw)) {
-      await onFileBinary(username, raw);
-      return;
-    }
+    if (raw instanceof ArrayBuffer || ArrayBuffer.isView(raw)) return;
     let msg = raw;
     if (typeof raw === "string") {
       try {
@@ -2218,25 +2299,34 @@
 
     if (msg.type === "hello") {
       const patch = {};
-      if (msg.displayName) patch.displayName = msg.displayName;
-      if (msg.status) patch.remoteStatus = msg.status;
-      if (msg.statusText != null) patch.statusText = msg.statusText;
-      if (msg.about != null) patch.about = msg.about;
-      if (msg.socials) patch.socials = msg.socials;
+      const displayName = String(msg.displayName || username).slice(0, 32);
+      const allowedStatus = ["online", "idle", "dnd", "invisible"];
+      const remoteStatus = allowedStatus.includes(msg.status) ? msg.status : "online";
+      const statusText = String(msg.statusText || "").slice(0, 80);
+      const about = String(msg.about || "").slice(0, 500);
+      const socials = {};
+      for (const key of ["discord", "twitter", "youtube", "instagram", "website"]) {
+        if (msg.socials?.[key]) socials[key] = String(msg.socials[key]).slice(0, 200);
+      }
+      patch.displayName = displayName;
+      patch.remoteStatus = remoteStatus;
+      patch.statusText = statusText;
+      patch.about = about;
+      patch.socials = socials;
       profileCache.set(username, {
         username,
-        displayName: msg.displayName || username,
-        about: msg.about || "",
-        socials: msg.socials || {},
-        status: msg.status || "online",
-        statusText: msg.statusText || "",
+        displayName,
+        about,
+        socials,
+        status: remoteStatus,
+        statusText,
       });
       if (Object.keys(patch).length) {
         await api.updateFriend(me.id, username, patch);
         friends = await api.listFriends(me.id);
         renderFriends();
       }
-      if (msg.avatar) {
+      if (typeof msg.avatar === "string" && /^data:image\/(?:png|jpeg|gif|webp);base64,/i.test(msg.avatar) && msg.avatar.length <= 7 * 1024 * 1024) {
         remoteAvatars.set(username, msg.avatar);
         renderFriends();
         if (activeFriend === username) setPeerHeader(friends.find((f) => f.username === username));
@@ -2245,8 +2335,9 @@
     }
 
     if (msg.type === "missed-call") {
-      const key = msg.groupId || username;
-      const fromU = msg.from || username;
+      const key = await authorizedMessageKey(username, msg);
+      if (!key) return;
+      const fromU = username;
       const cooldownKey = `missed:${key}:in:${fromU}`;
       if (!callEventAllowed(cooldownKey, 45000)) return;
       const m = {
@@ -2255,7 +2346,7 @@
         kind: "missed-call",
         text: `📞 Cevapsız çağrı ← @${fromU}`,
         from: fromU,
-        ts: msg.ts || Date.now(),
+        ts: safeRemoteTime(msg.ts),
       };
       await persistAndShow(key, m, { show: chatKey() === key });
       if (chatKey() !== key) {
@@ -2267,17 +2358,27 @@
     }
 
     if (msg.type === "chat" || msg.type === "gif") {
-      const key = msg.groupId || username;
+      const key = await authorizedMessageKey(username, msg);
+      if (!key) return;
+      const text = String(msg.text || "").slice(0, 2000);
+      const gifUrl = msg.type === "gif" ? safeGifUrl(msg.url) : null;
+      if (msg.type === "gif" && !gifUrl) return;
+      const claimedId = String(msg.id || "");
+      const messageId = /^[a-zA-Z0-9_-]{8,80}$/.test(claimedId) ? claimedId : crypto.randomUUID();
+      const existing = await api.getChat(me.id, key, 500);
+      if (existing.some((item) => item.id === messageId)) return;
       const m = {
-        id: msg.id || crypto.randomUUID(),
+        id: messageId,
         type: "chat",
         kind: msg.type === "gif" ? "gif" : "text",
-        text: msg.text || "",
-        url: msg.url || null,
+        text,
+        url: gifUrl,
         from: username,
-        displayName: msg.displayName || username,
-        ts: msg.ts || Date.now(),
-        replyTo: msg.replyTo || null,
+        displayName: friends.find((f) => f.username === username)?.displayName || username,
+        ts: safeRemoteTime(msg.ts),
+        replyTo: msg.replyTo && typeof msg.replyTo === "object"
+          ? { id: String(msg.replyTo.id || "").slice(0, 80), from: String(msg.replyTo.from || "").slice(0, 20), text: String(msg.replyTo.text || "").slice(0, 160) }
+          : null,
         groupId: msg.groupId || null,
       };
       await persistAndShow(key, m, { show: chatKey() === key });
@@ -2287,8 +2388,8 @@
         renderGroups();
         if (settings.desktopNotify !== false) {
           try {
-            new Notification(msg.displayName || username, {
-              body: (msg.text || "GIF/medya").slice(0, 120),
+            new Notification(m.displayName, {
+              body: (m.text || "GIF/medya").slice(0, 120),
               silent: true,
             });
           } catch {}
@@ -2299,38 +2400,48 @@
     }
 
     if (msg.type === "chat-edit" && msg.id) {
-      const key = msg.groupId || username;
-      await api.updateChat(me.id, key, msg.id, { text: msg.text });
+      const key = await authorizedMessageKey(username, msg);
+      if (!key) return;
+      const history = await api.getChat(me.id, key, 500);
+      const original = history.find((item) => item.id === msg.id);
+      if (!original || original.from !== username) return;
+      await api.updateChat(me.id, key, msg.id, { text: String(msg.text || "").slice(0, 2000) });
       if (chatKey() === key) await reloadChat();
       return;
     }
     if (msg.type === "chat-delete" && msg.id) {
-      const key = msg.groupId || username;
+      const key = await authorizedMessageKey(username, msg);
+      if (!key) return;
+      const history = await api.getChat(me.id, key, 500);
+      const original = history.find((item) => item.id === msg.id);
+      if (!original || original.from !== username) return;
       await api.deleteChat(me.id, key, msg.id);
       if (chatKey() === key) await reloadChat();
       return;
     }
     if (msg.type === "chat-react" && msg.id) {
-      const key = msg.groupId || username;
+      const key = await authorizedMessageKey(username, msg);
+      const emoji = String(msg.emoji || "").slice(0, 16);
+      if (!key || !emoji) return;
       const history = await api.getChat(me.id, key, 500);
       const found = history.find((x) => x.id === msg.id);
       if (found) {
         const reactions = { ...(found.reactions || {}) };
-        const arr = new Set(reactions[msg.emoji] || []);
-        if (arr.has(msg.from)) arr.delete(msg.from);
-        else arr.add(msg.from);
-        reactions[msg.emoji] = [...arr];
-        if (!reactions[msg.emoji].length) delete reactions[msg.emoji];
+        const arr = new Set(reactions[emoji] || []);
+        if (arr.has(username)) arr.delete(username);
+        else arr.add(username);
+        reactions[emoji] = [...arr].slice(0, 32);
+        if (!reactions[emoji].length) delete reactions[emoji];
         await api.updateChat(me.id, key, msg.id, { reactions });
         if (chatKey() === key) await reloadChat();
       }
       return;
     }
     if (msg.type === "presence") {
-      // durum bilgisi
+      const allowedStatuses = new Set(["online", "idle", "dnd", "invisible"]);
       await api.updateFriend(me.id, username, {
-        remoteStatus: msg.status,
-        statusText: msg.statusText || "",
+        remoteStatus: allowedStatuses.has(msg.status) ? msg.status : "online",
+        statusText: String(msg.statusText || "").slice(0, 120),
       });
       friends = await api.listFriends(me.id);
       renderFriends();
@@ -2338,60 +2449,94 @@
     }
 
     if (msg.type === "group-call-invite") {
-      // bilgi — asıl ses peer.call ile gelir
-      if (msg.groupId) {
-        // grup listesinde yoksa yerel kayıt yok; yine de arama gelecek
-      }
+      const groupId = String(msg.groupId || "");
+      const members = [...new Set((Array.isArray(msg.members) ? msg.members : [])
+        .map((u) => String(u || "").trim().toLowerCase())
+        .filter((u) => /^[a-z0-9._]{3,20}$/.test(u)))].slice(0, 12);
+      if (!/^g_[a-f0-9]{12,64}$/i.test(groupId)) return;
+      if (!members.includes(username) || !members.includes(me.username)) return;
+      await api.upsertGroup(me.id, {
+        id: groupId,
+        name: String(msg.groupName || "Grup").slice(0, 48),
+        members: members.filter((u) => u !== me.username),
+        createdBy: String(msg.createdBy || username).toLowerCase(),
+      });
+      groups = await api.listGroups(me.id);
+      renderGroups();
       return;
     }
 
     if (msg.type === "file-start") {
-      const kind = msg.mediaKind || mediaKind(msg.name);
-      // Her dosya için alıcı onayı
+      const fileId = String(msg.id || "");
+      const name = String(msg.name || "").trim().slice(0, 180);
+      const size = Number(msg.size);
+      const sha256 = String(msg.sha256 || "").toLowerCase();
+      if (!/^[a-f0-9-]{36}$/i.test(fileId) || !name) return;
+      if (!Number.isSafeInteger(size) || size < 0 || size > MAX_TRANSFER_BYTES) return;
+      if (!/^[a-f0-9]{64}$/.test(sha256)) return;
+      if (recvFile || mediaOfferResolve) {
+        sendTo(username, { type: "file-abort", id: fileId, reason: "busy" });
+        return;
+      }
+      const kind = mediaKind(name);
       const ok = await askFileOffer({
         kind,
-        name: msg.name,
-        size: msg.size,
+        name,
+        size,
         from: username,
       });
       if (!ok) {
-        sendTo(username, { type: "file-abort", id: msg.id });
+        sendTo(username, { type: "file-abort", id: fileId });
         if (activeFriend === username) {
-          renderMessage({ type: "system", text: `${t("fileDeclined")}: ${msg.name}` });
+          renderMessage({ type: "system", text: `${t("fileDeclined")}: ${name}` });
         }
         return;
       }
-      const savePath = await api.saveFileStart(msg.name, true);
-      if (!savePath) {
-        sendTo(username, { type: "file-abort", id: msg.id });
+      let save;
+      try {
+        save = await api.saveFileStart(name, size, true);
+      } catch (e) {
+        sendTo(username, { type: "file-abort", id: fileId, reason: "save-failed" });
+        renderMessage({ type: "system", text: `Dosya kaydı başlatılamadı: ${e.message || e}` });
+        return;
+      }
+      if (!save?.token) {
+        sendTo(username, { type: "file-abort", id: fileId });
         return;
       }
       recvFile = {
-        id: msg.id,
-        name: msg.name,
-        size: msg.size,
-        mime: msg.mime,
+        id: fileId,
+        name: save.name || name,
+        size,
+        sha256,
         mediaKind: kind,
-        savePath,
+        saveToken: save.token,
         offset: 0,
         from: username,
       };
-      showTransfer(`Alınıyor: ${msg.name}`, 0, `0 / ${fmtSize(msg.size)}`);
+      showTransfer(`Alınıyor: ${name}`, 0, `0 / ${fmtSize(size)}`);
       if (activeFriend === username) {
         renderMessage({
           type: "system",
-          text: `Dosya alınıyor: ${msg.name} (${fmtSize(msg.size)})…`,
+          text: `Dosya alınıyor: ${name} (${fmtSize(size)})…`,
         });
       }
-      sendTo(username, { type: "file-ready", id: msg.id });
+      sendTo(username, { type: "file-ready", id: fileId });
       return;
     }
 
     if (msg.type === "file-chunk" && recvFile && recvFile.id === msg.id && msg.b64) {
+      if (recvFile.from !== username) return;
+      if (Number(msg.offset) !== recvFile.offset) {
+        sendTo(username, { type: "file-abort", id: msg.id, reason: "bad-offset" });
+        await api.abortFileSave(recvFile.saveToken).catch(() => {});
+        recvFile = null;
+        hideTransfer();
+        return;
+      }
       try {
-        await api.saveFileChunk(recvFile.savePath, msg.b64, msg.offset || recvFile.offset);
-        const len = msg.len || 0;
-        recvFile.offset = (msg.offset || 0) + len;
+        const saved = await api.saveFileChunk(recvFile.saveToken, msg.b64, recvFile.offset);
+        recvFile.offset = Number(saved.nextOffset);
         const pct = recvFile.size ? (recvFile.offset / recvFile.size) * 100 : 0;
         showTransfer(
           `Alınıyor: ${recvFile.name}`,
@@ -2402,6 +2547,7 @@
       } catch (e) {
         console.error(e);
         sendTo(username, { type: "file-abort", id: msg.id });
+        await api.abortFileSave(recvFile.saveToken).catch(() => {});
         hideTransfer();
         recvFile = null;
       }
@@ -2409,49 +2555,67 @@
     }
 
     if (msg.type === "file-end" && recvFile && recvFile.id === msg.id) {
-      let previewUrl = null;
-      const kind = recvFile.mediaKind || mediaKind(recvFile.name);
-      if (kind === "image" || kind === "video") {
-        try {
-          const prev = await api.filePreview(recvFile.savePath);
-          if (prev && prev.dataUrl) previewUrl = prev.dataUrl;
-        } catch {}
+      if (recvFile.from !== username) return;
+      if (recvFile.offset !== recvFile.size) {
+        sendTo(username, { type: "file-abort", id: msg.id, reason: "incomplete" });
+        await api.abortFileSave(recvFile.saveToken).catch(() => {});
+        recvFile = null;
+        hideTransfer();
+        return;
       }
-      const done = {
-        id: crypto.randomUUID(),
-        type: "chat",
-        kind: kind === "image" || kind === "video" ? kind : "file",
-        name: recvFile.name,
-        size: recvFile.size,
-        localPath: recvFile.savePath,
-        previewUrl,
-        from: username,
-        displayName: username,
-        ts: Date.now(),
-      };
-      showTransfer(`Tamamlandı: ${recvFile.name}`, 100, fmtSize(recvFile.size));
-      setTimeout(hideTransfer, 2500);
-      await persistAndShow(username, done);
-      recvFile = null;
+      const completed = recvFile;
+      try {
+        await api.finalizeFileSave(completed.saveToken, completed.sha256);
+        let previewUrl = null;
+        const kind = completed.mediaKind || mediaKind(completed.name);
+        if (kind === "image" || kind === "video") {
+          const prev = await api.filePreview(completed.saveToken).catch(() => null);
+          if (prev?.dataUrl) previewUrl = prev.dataUrl;
+        }
+        const done = {
+          id: crypto.randomUUID(),
+          type: "chat",
+          kind: kind === "image" || kind === "video" ? kind : "file",
+          name: completed.name,
+          size: completed.size,
+          fileToken: completed.saveToken,
+          previewUrl,
+          from: username,
+          displayName: username,
+          ts: Date.now(),
+        };
+        showTransfer(`Tamamlandı: ${completed.name}`, 100, fmtSize(completed.size));
+        setTimeout(hideTransfer, 2500);
+        await persistAndShow(username, done);
+      } catch (e) {
+        await api.abortFileSave(completed.saveToken).catch(() => {});
+        renderMessage({ type: "system", text: `Dosya doğrulanamadı: ${e.message || e}` });
+      } finally {
+        recvFile = null;
+      }
       return;
     }
 
     if (msg.type === "file-abort") {
-      if (recvFile && recvFile.id === msg.id) recvFile = null;
+      if (recvFile && recvFile.id === msg.id && recvFile.from === username) {
+        await api.abortFileSave(recvFile.saveToken).catch(() => {});
+        recvFile = null;
+      }
       if (activeTransferId === msg.id) {
         transferCancelled = true;
         activeTransferId = null;
+        activeTransferTarget = null;
       }
       hideTransfer();
       if (activeFriend === username) {
         renderMessage({ type: "system", text: t("fileTransferAbort") });
       }
-      window.dispatchEvent(new CustomEvent("file-abort", { detail: msg }));
+      window.dispatchEvent(new CustomEvent("file-abort", { detail: { ...msg, from: username } }));
       return;
     }
 
     if (msg.type === "file-ready" || msg.type === "file-ack") {
-      window.dispatchEvent(new CustomEvent(msg.type, { detail: msg }));
+      window.dispatchEvent(new CustomEvent(msg.type, { detail: { ...msg, from: username } }));
       return;
     }
 
@@ -2463,12 +2627,19 @@
 
   async function tryConnect(username) {
     if (!peer || peer.destroyed) return;
-    const c = conns.get(username);
+    const un = String(username || "").trim().toLowerCase();
+    if (!/^[a-z0-9._]{3,20}$/.test(un) || un === me.username) return;
+    // İki tarafın aynı anda birbirinin bağlantısını kapatmasını önle.
+    if (me.username.localeCompare(un) > 0) return;
+    const c = conns.get(un);
     if (c && c.open) return;
+    if (c && Date.now() - Number(c._hearthConnectingAt || 0) < 15000) return;
     try {
-      const pid = await peerIdOf(username);
+      const pid = await peerIdOf(un, { refresh: true });
+      if (!pid) return;
       const conn = peer.connect(pid, { reliable: true });
-      wireConn(username, conn);
+      conn._hearthConnectingAt = Date.now();
+      wireConn(un, conn);
     } catch {}
   }
 
@@ -2508,7 +2679,9 @@
     const proto = s.secure ? "wss" : "ws";
     const port = Number(s.port) || 9000;
     const ppath = s.presencePath || "/presence";
-    const url = `${proto}://${s.host}:${port}${ppath}`;
+    const presenceUrl = new URL(`${proto}://${s.host}:${port}${ppath}`);
+    if (s.authToken) presenceUrl.searchParams.set("token", String(s.authToken));
+    const url = presenceUrl.href;
     stopPresenceWs = window.HearthPresence.connect({
       url,
       username: me.username,
@@ -2555,7 +2728,11 @@
       peer = null;
     }
     conns.clear();
-    const myPid = await peerIdOf(me.username);
+    const myPid = cloudMode
+      ? "h" + crypto.randomUUID().replace(/-/g, "")
+      : await legacyPeerIdOf(me.username);
+    sessionPeerId = myPid;
+    peerIdCache.set(me.username, { value: myPid, at: Date.now() });
     el.netStatus.textContent = t("netConnecting");
 
     const peerOpts = buildPeerOptions(myPid);
@@ -2563,6 +2740,13 @@
     peer = new Peer(myPid, peerOpts);
 
     peer.on("open", async (id) => {
+      if (cloudMode && window.HearthCloud?.isEnabled()) {
+        try {
+          await window.HearthCloud.updateProfile({ peerId: id });
+        } catch (e) {
+          console.warn(e);
+        }
+      }
       el.netStatus.textContent = usingOwn
         ? cloudMode
           ? t("netSignalCloud")
@@ -2573,18 +2757,17 @@
       for (const f of friends) tryConnect(f.username);
       startPresenceLoop();
       startSignalPresence();
-      if (cloudMode && window.HearthCloud?.isEnabled()) {
-        try {
-          await window.HearthCloud.updateProfile({ peerId: id });
-        } catch (e) {
-          console.warn(e);
-        }
-      }
     });
 
     peer.on("connection", (conn) => {
-      // Arkadaş listesinde olmasa bile kabul et; hello ile kullanıcı adını öğrenip ekleriz
       let bound = false;
+      const bindTimer = setTimeout(() => {
+        if (!bound) {
+          try {
+            conn.close();
+          } catch {}
+        }
+      }, 10000);
       // Geçici hello handler — tryBind sonrası kaldırılır (çifte onData engeli)
       const tempDataHandler = (raw) => {
         let msg = raw;
@@ -2596,7 +2779,9 @@
           }
         }
         if (msg && msg.type === "hello" && msg.username) {
-          tryBind(msg.username).then(() => onData(String(msg.username).toLowerCase(), msg));
+          tryBind(msg.username).then((ok) => {
+            if (ok) onData(String(msg.username).toLowerCase(), msg);
+          });
         }
       };
       const removeTemp = () => {
@@ -2606,20 +2791,27 @@
         } catch {}
       };
       const tryBind = async (username) => {
-        if (bound || !username) return;
-        bound = true;
-        removeTemp();
-        const un = String(username).toLowerCase();
-        if (!friends.some((f) => f.username === un) && un !== me.username) {
+        if (bound || !username) return false;
+        const un = String(username).trim().toLowerCase();
+        if (!/^[a-z0-9._]{3,20}$/.test(un) || un === me.username) return false;
+        if (!friends.some((f) => f.username === un)) {
           try {
-            await api.addFriend(me.id, un);
-            friends = await api.listFriends(me.id);
-            renderFriends();
-          } catch {
-            /* zaten var */
-          }
+            conn.close();
+          } catch {}
+          return false;
         }
+        const expectedPeerId = await peerIdOf(un, { refresh: true });
+        if (!expectedPeerId || expectedPeerId !== conn.peer) {
+          try {
+            conn.close();
+          } catch {}
+          return false;
+        }
+        bound = true;
+        clearTimeout(bindTimer);
+        removeTemp();
         wireConn(un, conn);
+        return true;
       };
 
       // Önce bilinen peer id ile eşleştir
@@ -2650,9 +2842,17 @@
 
     peer.on("call", async (call) => {
       let fromUser = (call.metadata && call.metadata.from) || null;
-      if (!fromUser) {
+      if (fromUser) {
+        fromUser = String(fromUser).trim().toLowerCase();
+        const knownFriend = friends.some((f) => f.username === fromUser);
+        const expectedPeerId = knownFriend ? await peerIdOf(fromUser, { refresh: true }) : null;
+        if (!knownFriend || !expectedPeerId || expectedPeerId !== call.peer) {
+          call.close();
+          return;
+        }
+      } else {
         for (const f of friends) {
-          const pid = await peerIdOf(f.username);
+          const pid = await peerIdOf(f.username, { refresh: true });
           if (pid === call.peer) {
             fromUser = f.username;
             break;
@@ -2666,6 +2866,28 @@
 
       const kind = (call.metadata && call.metadata.kind) || "audio";
       const groupId = call.metadata && call.metadata.groupId;
+      if (groupId) {
+        const members = [...new Set((call.metadata?.members || []).map((u) => String(u).trim().toLowerCase()))]
+          .filter((u) => /^[a-z0-9._]{3,20}$/.test(u))
+          .slice(0, 12);
+        if (!members.includes(me.username) || !members.includes(fromUser)) {
+          call.close();
+          return;
+        }
+        try {
+          await api.upsertGroup(me.id, {
+            id: groupId,
+            name: String(call.metadata?.groupName || "Grup").slice(0, 48),
+            members: members.filter((u) => u !== me.username),
+            createdBy: call.metadata?.createdBy || fromUser,
+          });
+          groups = await api.listGroups(me.id);
+          renderGroups();
+        } catch {
+          call.close();
+          return;
+        }
+      }
 
       if (kind === "screen" || kind === "screen-audio") {
         call.answer();
@@ -2931,55 +3153,63 @@
       renderMessage({ type: "system", text: t("selectChatFirst") });
       return;
     }
-    // Önceki transfer kilitli kaldıysa serbest bırak (decline sonrası)
     if (sendFileBusy) {
-      sendFileBusy = false;
-      transferCancelled = false;
-      activeTransferId = null;
-      hideTransfer();
+      renderMessage({ type: "system", text: "Başka bir dosya aktarımı devam ediyor." });
+      return;
     }
-    const conn = conns.get(activeFriend);
+    const target = activeFriend;
+    const conn = conns.get(target);
     if (!conn || !conn.open) {
       renderMessage({ type: "system", text: t("fileNeedOnline") });
       return;
     }
     const file = preselected || (await api.pickFile());
     if (!file) return;
+    if (!file.token || !Number.isSafeInteger(Number(file.size)) || file.size < 0 || file.size > MAX_TRANSFER_BYTES) {
+      renderMessage({ type: "system", text: "Dosya seçimi doğrulanamadı." });
+      return;
+    }
 
     sendFileBusy = true;
     transferCancelled = false;
+    activeTransferTarget = target;
     const id = crypto.randomUUID();
     activeTransferId = id;
     const chunkSize = 48 * 1024;
-    const WINDOW = 16;
+    // Her parça yazılıp doğrulanmadan yenisini yollama; renderer IPC çağrıları
+    // eşzamanlı çalıştığında parçaların atlanmasını engeller.
+    const WINDOW = 1;
 
     // Decline anında beklemeden çık
     const onAbortEv = (ev) => {
       const m = ev.detail;
-      if (m && m.id === id) {
+      if (m && m.id === id && m.from === target) {
         transferCancelled = true;
-        window.dispatchEvent(new CustomEvent("file-ready", { detail: { id, aborted: true } }));
+        window.dispatchEvent(new CustomEvent("file-ready", { detail: { id, from: target, aborted: true } }));
       }
     };
     window.addEventListener("file-abort", onAbortEv);
 
     try {
       const mKind = mediaKind(file.name);
-      sendTo(activeFriend, {
+      const sha256 = await api.hashFile(file.token);
+      const offered = sendTo(target, {
         type: "file-start",
         id,
         name: file.name,
         size: file.size,
         mime: "application/octet-stream",
         mediaKind: mKind,
+        sha256,
       });
+      if (!offered) throw new Error("Bağlantı koptu");
       showTransfer(`${t("fileSending")}: ${file.name}`, 0, `0 / ${fmtSize(file.size)}`);
       renderMessage({
         type: "system",
         text: `${t("fileSending")}: ${file.name} (${fmtSize(file.size)})…`,
       });
 
-      const ready = await waitEvent("file-ready", (m) => m && m.id === id, 120000);
+      const ready = await waitEvent("file-ready", (m) => m && m.id === id && m.from === target, 120000);
       if (!ready || ready.aborted || transferCancelled) {
         renderMessage({
           type: "system",
@@ -2993,8 +3223,9 @@
       let acked = 0;
       const onAck = (ev) => {
         const m = ev.detail;
-        if (!m || m.id !== id) return;
-        acked = Math.max(acked, m.offset || 0);
+        if (!m || m.id !== id || m.from !== target) return;
+        const next = Number(m.offset);
+        if (Number.isSafeInteger(next) && next >= acked && next <= file.size) acked = next;
       };
       window.addEventListener("file-ack", onAck);
 
@@ -3006,11 +3237,11 @@
           await new Promise((r) => setTimeout(r, 4));
         }
         const length = Math.min(chunkSize, file.size - offset);
-        const chunk = await api.readFileChunk(file.path, offset, length);
+        const chunk = await api.readFileChunk(file.token, offset, length);
         if (!chunk || !chunk.b64) throw new Error("Dosya okunamadı");
 
         const start = offset;
-        const ok = sendTo(activeFriend, {
+        const ok = sendTo(target, {
           type: "file-chunk",
           id,
           offset: start,
@@ -3036,23 +3267,24 @@
       window.removeEventListener("file-ack", onAck);
 
       if (transferCancelled) throw new Error("İptal edildi");
-      sendTo(activeFriend, { type: "file-end", id });
+      if (acked < file.size) throw new Error("Alıcı doğrulaması zaman aşımına uğradı");
+      sendTo(target, { type: "file-end", id });
       showTransfer(`✓ ${file.name}`, 100, fmtSize(file.size));
 
       let previewUrl = null;
       if (mKind === "image" || mKind === "video") {
         try {
-          const prev = await api.filePreview(file.path);
+          const prev = await api.filePreview(file.token);
           if (prev && prev.dataUrl) previewUrl = prev.dataUrl;
         } catch {}
       }
-      await persistAndShow(activeFriend, {
+      await persistAndShow(target, {
         id: crypto.randomUUID(),
         type: "chat",
         kind: mKind === "image" || mKind === "video" ? mKind : "file",
         name: file.name,
         size: file.size,
-        localPath: file.path,
+        fileToken: file.token,
         previewUrl,
         from: me.username,
         displayName: me.displayName,
@@ -3062,7 +3294,7 @@
     } catch (e) {
       console.error(e);
       try {
-        sendTo(activeFriend, { type: "file-abort", id });
+        sendTo(target, { type: "file-abort", id });
       } catch {}
       hideTransfer();
       renderMessage({ type: "system", text: "Dosya: " + (e.message || e) });
@@ -3070,6 +3302,7 @@
       window.removeEventListener("file-abort", onAbortEv);
       sendFileBusy = false;
       activeTransferId = null;
+      activeTransferTarget = null;
       transferCancelled = false;
     }
   }
@@ -3131,6 +3364,7 @@
   function endCallUi() {
     inCall = false;
     callWith = null;
+    void disposeMicGraph();
     setMediaDockVisible(false);
     releaseMediaElement(el.remoteVideo);
     releaseMediaElement(el.localVideo);
@@ -3485,6 +3719,7 @@
       showRingingTimer();
       updateCallButtons();
       if (el.callMembersLabel) el.callMembersLabel.textContent = g.members.join(", ");
+      const fullMembers = [...new Set([me.username, ...g.members])].slice(0, 12);
 
       // Mesh: her çevrimiçi üyeyi ara + data ile gruba davet
       for (const member of g.members) {
@@ -3492,7 +3727,9 @@
         sendTo(member, {
           type: "group-call-invite",
           groupId: g.id,
-          members: g.members,
+          groupName: g.name,
+          members: fullMembers,
+          createdBy: g.createdBy || me.username,
           from: me.username,
           displayName: me.displayName,
         });
@@ -3504,7 +3741,14 @@
         try {
           const pid = await peerIdOf(member);
           const call = peer.call(pid, stream, {
-            metadata: { kind: "audio", from: me.username, groupId: g.id },
+            metadata: {
+              kind: "audio",
+              from: me.username,
+              groupId: g.id,
+              groupName: g.name,
+              members: fullMembers,
+              createdBy: g.createdBy || me.username,
+            },
           });
           if (call) {
             mediaCalls.set(member, call);
@@ -3546,6 +3790,7 @@
     if (!g) return;
     try {
       const stream = await ensureMicGraph();
+      const fullMembers = [...new Set([me.username, ...g.members])].slice(0, 12);
       for (const member of g.members) {
         if (member === me.username || member === exceptUser) continue;
         if (mediaCalls.has(member)) continue;
@@ -3554,7 +3799,14 @@
         try {
           const pid = await peerIdOf(member);
           const call = peer.call(pid, stream, {
-            metadata: { kind: "audio", from: me.username, groupId },
+            metadata: {
+              kind: "audio",
+              from: me.username,
+              groupId,
+              groupName: g.name,
+              members: fullMembers,
+              createdBy: g.createdBy || me.username,
+            },
           });
           if (call) {
             mediaCalls.set(member, call);
@@ -3957,6 +4209,8 @@
             } else {
               // Yedek: Chromium loopback (çoğu kurulumda NotReadableError)
               try {
+                await api.setScreenSource(s.id);
+                await new Promise((r) => setTimeout(r, 50));
                 const withAudio = await navigator.mediaDevices.getDisplayMedia({
                   video: true,
                   audio: {
@@ -4243,6 +4497,7 @@
 
   async function enterApp(user) {
     me = user;
+    await api.bindSession(me.id);
     // Yerel ayarlar: cloud uuid veya local id
     settings = await api.getSettings(me.id);
     prefs = {
@@ -4684,20 +4939,17 @@
       el.chatShell.classList.remove("drag-over");
       const f = e.dataTransfer?.files?.[0];
       if (!f) return;
-      if (!activeFriend && !activeGroupId) {
+      if (!activeFriend) {
         renderMessage({ type: "system", text: t("selectChatFirst") });
         return;
       }
-      let p = "";
       try {
-        if (api.pathForFile) p = api.pathForFile(f) || "";
-      } catch {}
-      if (!p) p = f.path || "";
-      if (!p) {
+        const authorized = await api.authorizeDroppedFile(f);
+        if (!authorized?.token) throw new Error(t("pathFailed"));
+        await sendFile(authorized);
+      } catch (e) {
         renderMessage({ type: "system", text: t("pathFailed") });
-        return;
       }
-      await sendFile({ path: p, name: f.name, size: f.size });
     });
   }
 

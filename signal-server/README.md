@@ -34,14 +34,18 @@ Default: `http://0.0.0.0:9000`
     "port": 9000,
     "secure": false,
     "peerPath": "/peerjs",
-    "presencePath": "/presence"
+    "presencePath": "/presence",
+    "authToken": "UZUN_RASTGELE_ORTAK_TOKEN"
   }
 }
 ```
 
-All friends must point to the **same** signal host (LAN IP or VPS).
+All friends must point to the **same** signal host (LAN IP or VPS). For a public
+server, set `HEARTH_SIGNAL_TOKEN` on the server to the same long random value as
+`signal.authToken` in every client. This protects presence; WebRTC media remains P2P.
 
 ## Production
 
-Run on a small VPS; open TCP `9000` (or put behind nginx with WSS).  
-Update every client’s `signal.host` to that public hostname and `"secure": true` if TLS.
+Run behind TLS/WSS and a reverse proxy with connection rate limits. Do not expose
+an unprotected development server to the internet. Update every client’s
+`signal.host` to the public hostname and set `"secure": true`.

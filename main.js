@@ -13,6 +13,7 @@ const {
 const path = require("path");
 const fs = require("fs");
 const net = require("net");
+const crypto = require("crypto");
 
 // UI laboratuvarı / smoke: ayrı userData (gerçek hesap bozulmaz)
 // app.ready ÖNCESİ set edilmeli
@@ -40,6 +41,7 @@ const {
 } = require("./main/display-media");
 const systemAudio = require("./main/system-audio");
 const IS_UI_TEST = process.env.HEARTH_UI_TEST === "1" || process.env.HEARTH_UI_TEST === "true";
+if (IS_UI_TEST) app.disableHardwareAcceleration();
 
 /** Production'da console gürültüsünü azalt (UI test / dev açık kalsın) */
 function devLog(...args) {
@@ -245,6 +247,7 @@ function defaultSignalConfig() {
     secure: process.env.HEARTH_SIGNAL_SECURE === "1",
     peerPath: "/peerjs",
     presencePath: "/presence",
+    authToken: process.env.HEARTH_SIGNAL_TOKEN || "",
     embed: false,
   };
 }
@@ -360,6 +363,7 @@ async function maybeEmbedSignalServer(cfg) {
     process.env.PORT = String(port);
     process.env.HOST = "0.0.0.0";
     process.env.HEARTH_SIGNAL_SKIP_LISTEN = "0";
+    if (s.authToken) process.env.HEARTH_SIGNAL_TOKEN = String(s.authToken);
     require("./signal-server/index.js");
     signalStarted = true;
     devLog("hearth-signal embed port", process.env.PORT);
@@ -374,6 +378,18 @@ let win = null;
 /** @type {Tray | null} */
 let tray = null;
 let currentUserId = null;
+
+function activeUserId(requestedId) {
+  if (!currentUserId) throw new Error("Oturum açık değil.");
+  const requested = storage.normalizeUserId(requestedId || currentUserId);
+  const active = storage.normalizeUserId(currentUserId);
+  if (requested !== active) throw new Error("Başka bir kullanıcı profiline erişim reddedildi.");
+  return active;
+}
+
+function isTrustedWebContents(contents) {
+  return !!(win && !win.isDestroyed() && contents && contents.id === win.webContents.id);
+}
 
 function createWindow() {
   const iconPath = appIconPath();
@@ -395,13 +411,23 @@ function createWindow() {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      sandbox: true,
       backgroundThrottling: false,
     },
   });
 
   Menu.setApplicationMenu(null);
-  win.loadFile(path.join(__dirname, "public", "index.html"));
+  const appEntry = path.join(__dirname, "public", "index.html");
+  win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  win.webContents.on("will-navigate", (event, targetUrl) => {
+    let allowed = false;
+    try {
+      const target = new URL(targetUrl);
+      allowed = target.protocol === "file:" && path.resolve(decodeURIComponent(target.pathname).replace(/^\/(?:([A-Za-z]:))/i, "$1")) === path.resolve(appEntry);
+    } catch {}
+    if (!allowed) event.preventDefault();
+  });
+  win.loadFile(appEntry);
   win.once("ready-to-show", () => win.show());
 
   win.on("close", (e) => {
@@ -533,7 +559,10 @@ app.whenReady().then(async () => {
     if (win && ip && typeof win.setIcon === "function") win.setIcon(ip);
   } catch {}
   if (!IS_UI_TEST) createTray();
-  setupDisplayMedia({ log: (m, e) => devWarn(m, e) });
+  setupDisplayMedia({
+    log: (m, e) => devWarn(m, e),
+    isTrustedWebContents,
+  });
   setupAutoUpdater();
   try {
     await maybeEmbedSignalServer(loadCloudConfig());
@@ -587,8 +616,16 @@ ipcMain.handle("auth-logout", () => {
   storage.logout();
   currentUserId = null;
   try {
-    globalShortcut.unregisterAll();
+    hotkeys.unregisterAll();
   } catch {}
+  return true;
+});
+
+// Supabase oturumu renderer'da tutulur; yalnızca güvenli profil klasörü seçimini
+// ana sürece bildirir. storage.normalizeUserId path traversal'ı engeller.
+ipcMain.handle("auth-bind-cloud", (_e, userId) => {
+  currentUserId = storage.normalizeUserId(userId);
+  registerShortcutsForUser(currentUserId);
   return true;
 });
 
@@ -598,42 +635,45 @@ ipcMain.handle("app-version", () => app.getVersion());
 ipcMain.handle("update-check", (_e, opts) => checkForAppUpdates({ silent: !!(opts && opts.silent) }));
 ipcMain.handle("update-status", () => lastUpdateStatus);
 
-ipcMain.handle("settings-get", (_e, userId) => storage.getSettings(userId || currentUserId));
+ipcMain.handle("settings-get", (_e, userId) => storage.getSettings(activeUserId(userId)));
 ipcMain.handle("settings-save", (_e, { userId, patch }) => {
-  const id = userId || currentUserId;
+  const id = activeUserId(userId);
   const next = storage.saveSettings(id, patch);
   registerShortcutsForUser(id);
   return next;
 });
 ipcMain.handle("profile-update", (_e, { userId, ...patch }) =>
-  storage.updateProfile(userId || currentUserId, patch)
+  storage.updateProfile(activeUserId(userId), patch)
 );
 ipcMain.handle("chat-update", (_e, { userId, friendUsername, messageId, patch }) =>
-  storage.updateChatMessage(userId || currentUserId, friendUsername, messageId, patch)
+  storage.updateChatMessage(activeUserId(userId), friendUsername, messageId, patch)
 );
 ipcMain.handle("chat-delete", (_e, { userId, friendUsername, messageId }) =>
-  storage.deleteChatMessage(userId || currentUserId, friendUsername, messageId)
+  storage.deleteChatMessage(activeUserId(userId), friendUsername, messageId)
 );
 ipcMain.handle("pins-get", (_e, { userId, friendUsername }) =>
-  storage.getPins(userId || currentUserId, friendUsername)
+  storage.getPins(activeUserId(userId), friendUsername)
 );
 ipcMain.handle("pins-set", (_e, { userId, friendUsername, pins }) =>
-  storage.setPins(userId || currentUserId, friendUsername, pins)
+  storage.setPins(activeUserId(userId), friendUsername, pins)
 );
 
-ipcMain.handle("groups-list", (_e, userId) => storage.getGroups(userId || currentUserId));
+ipcMain.handle("groups-list", (_e, userId) => storage.getGroups(activeUserId(userId)));
 ipcMain.handle("groups-create", (_e, { userId, name, members }) =>
-  storage.createGroup(userId || currentUserId, { name, members })
+  storage.createGroup(activeUserId(userId), { name, members })
 );
 ipcMain.handle("groups-delete", (_e, { userId, groupId }) =>
-  storage.deleteGroup(userId || currentUserId, groupId)
+  storage.deleteGroup(activeUserId(userId), groupId)
 );
 ipcMain.handle("groups-get", (_e, { userId, groupId }) =>
-  storage.getGroup(userId || currentUserId, groupId)
+  storage.getGroup(activeUserId(userId), groupId)
 );
-ipcMain.handle("avatar-get", (_e, userId) => storage.avatarDataUrl(userId || currentUserId));
+ipcMain.handle("groups-upsert", (_e, { userId, group }) =>
+  storage.upsertGroup(activeUserId(userId), group)
+);
+ipcMain.handle("avatar-get", (_e, userId) => storage.avatarDataUrl(activeUserId(userId)));
 ipcMain.handle("avatar-pick", async (_e, userId) => {
-  const id = userId || currentUserId;
+  const id = activeUserId(userId);
   const res = await dialog.showOpenDialog(win, {
     title: "Profil resmi / GIF seç",
     filters: [{ name: "Görseller", extensions: ["png", "jpg", "jpeg", "gif", "webp"] }],
@@ -645,21 +685,21 @@ ipcMain.handle("avatar-pick", async (_e, userId) => {
 });
 
 // ---- Friends / chat ----
-ipcMain.handle("friends-list", (_e, userId) => storage.getFriends(userId || currentUserId));
+ipcMain.handle("friends-list", (_e, userId) => storage.getFriends(activeUserId(userId)));
 ipcMain.handle("friends-add", (_e, { userId, username, displayName }) =>
-  storage.addFriend(userId || currentUserId, { username, displayName })
+  storage.addFriend(activeUserId(userId), { username, displayName })
 );
 ipcMain.handle("friends-remove", (_e, { userId, username }) =>
-  storage.removeFriend(userId || currentUserId, username)
+  storage.removeFriend(activeUserId(userId), username)
 );
 ipcMain.handle("friends-update", (_e, { userId, username, patch }) =>
-  storage.updateFriendMeta(userId || currentUserId, username, patch)
+  storage.updateFriendMeta(activeUserId(userId), username, patch)
 );
 ipcMain.handle("chat-get", (_e, { userId, friendUsername, limit }) =>
-  storage.getChat(userId || currentUserId, friendUsername, limit || 500)
+  storage.getChat(activeUserId(userId), friendUsername, limit || 500)
 );
 ipcMain.handle("chat-append", (_e, { userId, friendUsername, message }) =>
-  storage.appendChat(userId || currentUserId, friendUsername, message)
+  storage.appendChat(activeUserId(userId), friendUsername, message)
 );
 
 // ---- Screen / files ----
@@ -695,23 +735,82 @@ ipcMain.handle("system-audio-status", () => ({
   helper: systemAudio.helperPath(),
 }));
 
+const MAX_TRANSFER_BYTES = 512 * 1024 * 1024;
+const MAX_TRANSFER_CHUNK = 64 * 1024;
+const FILE_CAP_TTL = 6 * 60 * 60 * 1000;
+const readFileCaps = new Map();
+const writeFileCaps = new Map();
+
+function safeTransferName(name) {
+  const base = path.basename(String(name || "dosya"))
+    .replace(/[<>:"/\\|?*\x00-\x1f]/g, "_")
+    .replace(/[. ]+$/g, "")
+    .slice(0, 180);
+  return base || "dosya";
+}
+
+function issueReadCapability(filePath) {
+  const resolved = fs.realpathSync(String(filePath));
+  const stat = fs.statSync(resolved);
+  if (!stat.isFile()) throw new Error("Yalnızca normal dosyalar gönderilebilir.");
+  if (stat.size > MAX_TRANSFER_BYTES) throw new Error("Dosya en fazla 512 MB olabilir.");
+  const token = crypto.randomUUID();
+  readFileCaps.set(token, { path: resolved, size: stat.size, expiresAt: Date.now() + FILE_CAP_TTL });
+  return { token, name: path.basename(resolved), size: stat.size };
+}
+
+function resolveFileCapability(token, { writable = false } = {}) {
+  const map = writable ? writeFileCaps : readFileCaps;
+  const key = String(token || "");
+  const cap = map.get(key);
+  if (!cap || cap.expiresAt < Date.now()) {
+    if (cap) map.delete(key);
+    throw new Error("Dosya izninin süresi doldu.");
+  }
+  cap.expiresAt = Date.now() + FILE_CAP_TTL;
+  return cap;
+}
+
+function resolveAnyFileCapability(token) {
+  try {
+    return resolveFileCapability(token);
+  } catch {
+    return resolveFileCapability(token, { writable: true });
+  }
+}
+
+function hashFile(filePath) {
+  return new Promise((resolve, reject) => {
+    const hash = crypto.createHash("sha256");
+    const stream = fs.createReadStream(filePath);
+    stream.on("error", reject);
+    stream.on("data", (chunk) => hash.update(chunk));
+    stream.on("end", () => resolve(hash.digest("hex")));
+  });
+}
+
 ipcMain.handle("file-pick", async () => {
   const res = await dialog.showOpenDialog(win, {
     title: "Gönderilecek dosya",
     properties: ["openFile"],
   });
   if (res.canceled || !res.filePaths[0]) return null;
-  const p = res.filePaths[0];
-  const st = fs.statSync(p);
-  return { path: p, name: path.basename(p), size: st.size };
+  return issueReadCapability(res.filePaths[0]);
 });
 
+ipcMain.handle("file-authorize-dropped", (_e, filePath) => issueReadCapability(filePath));
+
 // Base64 chunk — Electron IPC + PeerJS ile güvenilir (Buffer bozulmaz)
-ipcMain.handle("file-read-chunk", (_e, { filePath, offset, length }) => {
-  const fd = fs.openSync(filePath, "r");
+ipcMain.handle("file-read-chunk", (_e, { token, offset, length }) => {
+  const cap = resolveFileCapability(token);
+  const start = Number(offset);
+  const wanted = Number(length);
+  if (!Number.isSafeInteger(start) || start < 0 || start > cap.size) throw new Error("Geçersiz dosya ofseti.");
+  if (!Number.isSafeInteger(wanted) || wanted < 1 || wanted > MAX_TRANSFER_CHUNK) throw new Error("Geçersiz parça boyutu.");
+  const fd = fs.openSync(cap.path, "r");
   try {
-    const buf = Buffer.alloc(Math.max(0, length | 0));
-    const read = fs.readSync(fd, buf, 0, buf.length, offset);
+    const buf = Buffer.alloc(Math.min(wanted, cap.size - start));
+    const read = fs.readSync(fd, buf, 0, buf.length, start);
     return {
       b64: buf.subarray(0, read).toString("base64"),
       len: read,
@@ -721,13 +820,22 @@ ipcMain.handle("file-read-chunk", (_e, { filePath, offset, length }) => {
   }
 });
 
-ipcMain.handle("file-save-start", async (_e, { name, auto }) => {
+ipcMain.handle("file-hash", async (_e, token) => {
+  const cap = resolveFileCapability(token);
+  return hashFile(cap.path);
+});
+
+ipcMain.handle("file-save-start", async (_e, { name, size, auto }) => {
+  const expectedSize = Number(size);
+  if (!Number.isSafeInteger(expectedSize) || expectedSize < 0 || expectedSize > MAX_TRANSFER_BYTES) {
+    throw new Error("Geçersiz dosya boyutu.");
+  }
+  const safe = safeTransferName(name);
   let target;
   if (auto) {
-    const safe = String(name || "dosya").replace(/[<>:"/\\|?*]/g, "_");
     target = path.join(storage.downloadsDir(), `${Date.now()}_${safe}`);
   } else {
-    const defaultPath = path.join(storage.downloadsDir(), name || "indirilen_dosya");
+    const defaultPath = path.join(storage.downloadsDir(), safe);
     const res = await dialog.showSaveDialog(win, {
       title: "Dosyayı kaydet",
       defaultPath,
@@ -736,36 +844,72 @@ ipcMain.handle("file-save-start", async (_e, { name, auto }) => {
     target = res.filePath;
   }
   fs.writeFileSync(target, Buffer.alloc(0));
-  return target;
+  const token = crypto.randomUUID();
+  writeFileCaps.set(token, {
+    path: path.resolve(target),
+    expectedSize,
+    nextOffset: 0,
+    expiresAt: Date.now() + FILE_CAP_TTL,
+  });
+  return { token, name: safe, size: expectedSize };
 });
 
-ipcMain.handle("file-save-chunk", (_e, { savePath, b64, offset }) => {
-  if (!savePath || b64 == null) return false;
+ipcMain.handle("file-save-chunk", (_e, { token, b64, offset }) => {
+  const cap = resolveFileCapability(token, { writable: true });
+  if (b64 == null) throw new Error("Dosya parçası yok.");
   const buf = Buffer.from(String(b64), "base64");
-  const fd = fs.openSync(savePath, "r+");
+  const start = Number(offset);
+  if (!buf.length || buf.length > MAX_TRANSFER_CHUNK) throw new Error("Geçersiz dosya parçası.");
+  if (!Number.isSafeInteger(start) || start !== cap.nextOffset) throw new Error("Dosya parçaları sırasız geldi.");
+  if (start + buf.length > cap.expectedSize) throw new Error("Dosya bildirilen boyutu aşıyor.");
+  const fd = fs.openSync(cap.path, "r+");
   try {
-    fs.writeSync(fd, buf, 0, buf.length, offset || 0);
+    fs.writeSync(fd, buf, 0, buf.length, start);
   } finally {
     fs.closeSync(fd);
   }
-  return { written: buf.length };
+  cap.nextOffset += buf.length;
+  return { written: buf.length, nextOffset: cap.nextOffset };
 });
 
-ipcMain.handle("file-save-auto", async (_e, { name }) => {
-  const safe = String(name || "dosya").replace(/[<>:"/\\|?*]/g, "_");
-  const p = path.join(storage.downloadsDir(), `${Date.now()}_${safe}`);
-  fs.writeFileSync(p, Buffer.alloc(0));
-  return p;
+ipcMain.handle("file-save-finalize", async (_e, { token, sha256 }) => {
+  const cap = resolveFileCapability(token, { writable: true });
+  if (cap.nextOffset !== cap.expectedSize) throw new Error("Dosya eksik alındı.");
+  const actualHash = await hashFile(cap.path);
+  if (!/^[a-f0-9]{64}$/i.test(String(sha256 || "")) || actualHash !== String(sha256).toLowerCase()) {
+    try {
+      fs.unlinkSync(cap.path);
+    } catch {}
+    writeFileCaps.delete(String(token));
+    throw new Error("Dosya bütünlük kontrolü başarısız.");
+  }
+  return { ok: true, token, size: cap.expectedSize, sha256: actualHash };
+});
+
+ipcMain.handle("file-save-abort", (_e, token) => {
+  const key = String(token || "");
+  const cap = writeFileCaps.get(key);
+  if (!cap) return false;
+  writeFileCaps.delete(key);
+  try {
+    if (fs.existsSync(cap.path)) fs.unlinkSync(cap.path);
+  } catch {}
+  return true;
 });
 
 ipcMain.handle("avatar-save-dataurl", (_e, { userId, dataUrl }) => {
-  const id = userId || currentUserId;
+  const id = activeUserId(userId);
   if (!dataUrl || typeof dataUrl !== "string" || !dataUrl.startsWith("data:")) {
     throw new Error("Geçersiz görsel");
   }
   const m = dataUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
   if (!m) throw new Error("Geçersiz data URL");
   const mime = m[1];
+  if (!["image/png", "image/jpeg", "image/gif", "image/webp"].includes(mime.toLowerCase())) {
+    throw new Error("Desteklenmeyen görsel türü.");
+  }
+  const avatarBuffer = Buffer.from(m[2], "base64");
+  if (avatarBuffer.length > 5 * 1024 * 1024) throw new Error("Profil resmi en fazla 5 MB olabilir.");
   const ext =
     mime.includes("gif") ? ".gif" : mime.includes("webp") ? ".webp" : mime.includes("jpeg") || mime.includes("jpg") ? ".jpg" : ".png";
   const dir = path.join(app.getPath("userData"), "profiles", id, "avatar");
@@ -776,12 +920,13 @@ ipcMain.handle("avatar-save-dataurl", (_e, { userId, dataUrl }) => {
     } catch {}
   }
   const dest = path.join(dir, "avatar" + ext);
-  fs.writeFileSync(dest, Buffer.from(m[2], "base64"));
+  fs.writeFileSync(dest, avatarBuffer);
   return storage.avatarDataUrl(id);
 });
 
-ipcMain.handle("open-path", (_e, p) => {
-  if (p) shell.showItemInFolder(p);
+ipcMain.handle("open-path", (_e, token) => {
+  const cap = resolveAnyFileCapability(token);
+  shell.showItemInFolder(cap.path);
 });
 ipcMain.handle("open-external", async (_e, url) => {
   const u = String(url || "").trim();
@@ -794,12 +939,13 @@ ipcMain.handle("open-external", async (_e, url) => {
   }
 });
 
-ipcMain.handle("file-preview-dataurl", (_e, filePath) => {
+ipcMain.handle("file-preview-dataurl", (_e, token) => {
   try {
-    if (!filePath || !fs.existsSync(filePath)) return null;
-    const st = fs.statSync(filePath);
+    const cap = resolveAnyFileCapability(token);
+    if (!fs.existsSync(cap.path)) return null;
+    const st = fs.statSync(cap.path);
     if (st.size > 12 * 1024 * 1024) return { tooLarge: true, size: st.size };
-    const ext = path.extname(filePath).toLowerCase();
+    const ext = path.extname(cap.path).toLowerCase();
     const map = {
       ".png": "image/png",
       ".jpg": "image/jpeg",
@@ -813,19 +959,10 @@ ipcMain.handle("file-preview-dataurl", (_e, filePath) => {
     };
     const mime = map[ext];
     if (!mime) return { unsupported: true };
-    const buf = fs.readFileSync(filePath);
+    const buf = fs.readFileSync(cap.path);
     return { dataUrl: `data:${mime};base64,${buf.toString("base64")}`, mime, size: st.size };
   } catch {
     return null;
-  }
-});
-
-ipcMain.handle("delete-path", (_e, p) => {
-  try {
-    if (p && fs.existsSync(p)) fs.unlinkSync(p);
-    return true;
-  } catch {
-    return false;
   }
 });
 
