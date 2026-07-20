@@ -63,10 +63,12 @@ function setupDisplayMedia(opts = {}) {
           return;
         }
 
-        // Electron: audioRequested bazen undefined gelir — sistem sesi için loopback dene.
-        // İstemci audio:false gönderdiyse track'i kendisi kapatır.
-        const tryLoopback = request.audioRequested !== false;
-        if (tryLoopback) {
+        // Windows WASAPI loopback = varsayılan SES ÇIKIŞ cihazı mix'i
+        // (hoparlör/kulaklıkta çalan video/oyun/müzik). Tüm ekran veya pencere
+        // fark etmez — loopback çıkış aygıtına bağlıdır.
+        // İstemci audio:false isterse track'leri renderer kapatır.
+        const wantLoopback = request.audioRequested !== false;
+        if (wantLoopback) {
           respond({ video: source, audio: "loopback" });
         } else {
           respond({ video: source });

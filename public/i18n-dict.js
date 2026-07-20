@@ -80,7 +80,11 @@ window.HEARTH_I18N = {
     fileNotReady: "Alıcı hazır değil veya reddetti.",
     screenSharing: "Ekran paylaşılıyor.",
     screenSharingAudio: "Ekran + sistem sesi paylaşılıyor.",
+    screenSharingDefaultOut:
+      "Ekran + varsayılan çıkış sesi paylaşılıyor (Windows hoparlör/kulaklık mix).",
     screenNoAudio: "Sistem sesi alınamadı; sadece görüntü paylaşılıyor.",
+    screenAudioMissing:
+      "Sadece görüntü: varsayılan çıkış sesi yakalanamadı. «Sistem sesi» kutusunu ve Windows ses çıkışını kontrol et.",
     screenFailed: "Ekran paylaşılamadı",
     callEnded: "Görüşme sona erdi.",
     micNeeded: "Mikrofon izni gerekli.",
@@ -251,7 +255,11 @@ window.HEARTH_I18N = {
     fileNotReady: "Recipient declined or is not ready.",
     screenSharing: "Screen sharing.",
     screenSharingAudio: "Sharing screen + system audio.",
+    screenSharingDefaultOut:
+      "Sharing screen + default output audio (Windows speaker/headphone mix).",
     screenNoAudio: "Could not capture system audio; video only.",
+    screenAudioMissing:
+      "Video only: could not capture default output audio. Check System audio and Windows playback device.",
     screenFailed: "Screen share failed",
     callEnded: "Call ended.",
     micNeeded: "Microphone permission required.",

@@ -1,5 +1,13 @@
 # Changelog
 
+## 4.8.1
+
+### Default-output loopback + mic toggle SFX
+
+- Screen share audio = **Windows default playback device mix** (WASAPI loopback); full screen or window — same path
+- Clear UI messages when loopback captured / missing
+- Mic mute/unmute feedback sounds: `public/sounds/mic_on.mp3`, `mic_mute.mp3` (from Desktop/mic)
+
 ## 4.8.0
 
 ### Screen share rebuild + any-button hotkeys

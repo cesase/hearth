@@ -312,6 +312,8 @@
     outgoing: null,
     notify: null,
     preview: null,
+    micOn: null,
+    micMute: null,
   };
 
   function soundPath(file) {
@@ -352,14 +354,33 @@
     snd.notify = new Audio(soundPath(ntf));
     snd.notify.loop = false;
     snd.notify.volume = soundMasterVol();
+    // Mic mute / unmute teyit (Desktop/mic → public/sounds)
+    snd.micOn = new Audio(soundPath("mic_on.mp3"));
+    snd.micOn.loop = false;
+    snd.micOn.volume = Math.min(1, soundMasterVol() * 0.9);
+    snd.micMute = new Audio(soundPath("mic_mute.mp3"));
+    snd.micMute.loop = false;
+    snd.micMute.volume = Math.min(1, soundMasterVol() * 0.9);
   }
 
   function ensureSounds() {
-    if (!snd.incoming || !snd.outgoing || !snd.notify) rebuildSounds();
+    if (!snd.incoming || !snd.outgoing || !snd.notify || !snd.micOn || !snd.micMute) rebuildSounds();
     const vol = soundMasterVol();
     if (snd.incoming) snd.incoming.volume = vol;
     if (snd.outgoing) snd.outgoing.volume = vol;
     if (snd.notify) snd.notify.volume = vol;
+    if (snd.micOn) snd.micOn.volume = Math.min(1, vol * 0.9);
+    if (snd.micMute) snd.micMute.volume = Math.min(1, vol * 0.9);
+  }
+
+  function playMicToggleSound(isNowOn) {
+    try {
+      ensureSounds();
+      const a = isNowOn ? snd.micOn : snd.micMute;
+      if (!a) return;
+      a.currentTime = 0;
+      a.play().catch(() => {});
+    } catch {}
   }
 
   function stopRings() {
@@ -2025,6 +2046,8 @@
     micOn = !micOn;
     applyMicEnabled();
     setMicUi();
+    // Mute / unmute teyit sesi (buton + global hotkey aynı yol)
+    playMicToggleSound(micOn);
   }
 
   let preDeafenMicOn = true;
@@ -3713,20 +3736,36 @@
           const video = qualityConstraints(q, fps);
           const wantSysAudio = !!(el.screenSystemAudio && el.screenSystemAudio.checked);
 
-          // 1) Basit constraints — en yüksek başarı oranı
+          // Varsayılan çıkış (loopback): audio true → main handler WASAPI
+          // Tüm ekran / pencere fark etmez; ses çıkış aygıtından gelir
           try {
             screenStream = await navigator.mediaDevices.getDisplayMedia({
               video: true,
-              audio: !!wantSysAudio,
+              audio: wantSysAudio
+                ? {
+                    // Chromium'a audioRequested=true sinyali; echo kapat (sistem mix)
+                    echoCancellation: false,
+                    noiseSuppression: false,
+                    autoGainControl: false,
+                  }
+                : false,
             });
           } catch (err1) {
             if (wantSysAudio) {
-              console.warn("Sesli ekran başarısız, sadece video:", err1);
-              screenStream = await navigator.mediaDevices.getDisplayMedia({
-                video: true,
-                audio: false,
-              });
-              renderMessage({ type: "system", text: t("screenNoAudio") });
+              console.warn("Sesli ekran başarısız, audio:true dene:", err1);
+              try {
+                screenStream = await navigator.mediaDevices.getDisplayMedia({
+                  video: true,
+                  audio: true,
+                });
+              } catch (err2) {
+                console.warn("Sesli ekran tamamen başarısız, sadece video:", err2);
+                screenStream = await navigator.mediaDevices.getDisplayMedia({
+                  video: true,
+                  audio: false,
+                });
+                renderMessage({ type: "system", text: t("screenNoAudio") });
+              }
             } else {
               throw err1;
             }
@@ -3815,11 +3854,16 @@
           renderMessage({
             type: "system",
             text: hasAudio
-              ? t("screenSharingAudio")
+              ? t("screenSharingDefaultOut") ||
+                "Ekran + varsayılan çıkış sesi paylaşılıyor (Windows hoparlör/kulaklık mix)."
               : wantSysAudio
-                ? t("screenAudioMissing")
+                ? t("screenAudioMissing") ||
+                  "Sadece görüntü: varsayılan çıkış sesi yakalanamadı."
                 : t("screenSharing"),
           });
+          if (wantSysAudio) {
+            console.log("[screen] audioTracks", audioTracks.length, audioTracks.map((x) => x.label || x.id));
+          }
         } catch (err) {
           if (screenStream) {
             try {
