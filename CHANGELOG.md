@@ -1,5 +1,14 @@
 # Changelog
 
+## 4.9.1
+
+### Cloud registration compatibility hotfix
+
+- Fixed registration failing with `Could not find the function public.is_username_available` when the live Supabase project still uses the pre-4.9 schema.
+- Added a narrowly scoped legacy profile lookup fallback only for PostgREST missing-RPC/schema-cache errors; other database and network errors are still surfaced.
+- Added an idempotent Supabase hotfix migration and explicit PostgREST schema-cache reload.
+- Added automated coverage for RPC success, legacy fallback, duplicate username and non-schema database failures.
+
 ## 4.9.0
 
 ### Security, identity and transfer hardening

@@ -28,6 +28,13 @@ Sunucu = API + veritabanı; medya depolamaz.
 1. Supabase → **SQL Editor** → New query  
 2. `cloud/schema.sql` dosyasının **tamamını** yapıştır → Run  
 
+### 4.9.0'dan güncelleme / RPC bulunamadı hatası
+
+Kayıtta `public.is_username_available(candidate_username)` veya `schema cache`
+hatası görülürse Supabase SQL Editor'da yalnızca
+`cloud/migrations/4.9.1-username-availability.sql` dosyasını çalıştırmak yeterlidir.
+Migration tekrar çalıştırılabilir ve sonunda PostgREST şema önbelleğini yeniler.
+
 ## 3) Realtime (önerilir)
 
 **Database → Publications → supabase_realtime**  

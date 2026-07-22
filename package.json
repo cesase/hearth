@@ -1,6 +1,6 @@
 {
   "name": "hearth",
-  "version": "4.9.0",
+  "version": "4.9.1",
   "description": "Hearth - P2P sesli sohbet, ekran ve dosya",
   "main": "main.js",
   "author": "Faruk",
@@ -22,8 +22,9 @@
     "ui:lab": "node tests/ui/smoke.spec.js --headed",
     "ui:scenario": "node tests/ui/run-scenario.js",
     "check": "node scripts/check-js.js",
+    "test:cloud": "node tests/cloud/register-fallback.spec.js",
     "test:signal": "node tests/signal/security.spec.js",
-    "test": "npm run check && npm run test:signal"
+    "test": "npm run check && npm run test:cloud && npm run test:signal"
   },
   "build": {
     "appId": "com.hearth.app",

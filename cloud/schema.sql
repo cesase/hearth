@@ -290,3 +290,6 @@ create policy "signals_delete" on public.signals
 -- Realtime (Supabase Dashboard > Replication'da da açılabilir)
 -- alter publication supabase_realtime add table public.signals;
 -- alter publication supabase_realtime add table public.profiles;
+
+-- SQL Editor'da şema güncellendikten sonra PostgREST RPC önbelleğini yenile.
+notify pgrst, 'reload schema';

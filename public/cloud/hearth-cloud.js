@@ -96,6 +96,37 @@
     return msg;
   }
 
+  function isMissingUsernameAvailabilityRpc(error) {
+    const code = String(error?.code || "").toUpperCase();
+    const message = String(error?.message || error || "").toLowerCase();
+    return (
+      code === "PGRST202" ||
+      code === "PGRST404" ||
+      (message.includes("is_username_available") &&
+        (message.includes("schema cache") || message.includes("could not find the function")))
+    );
+  }
+
+  async function usernameIsAvailable(username) {
+    const { data, error } = await STATE.client.rpc("is_username_available", {
+      candidate_username: username,
+    });
+    if (!error) return !!data;
+    if (!isMissingUsernameAvailabilityRpc(error)) throw error;
+
+    // 4.9.0 SQL migration'ı henüz uygulanmamış eski Hearth kurulumlarıyla
+    // geriye uyumluluk. Eski RLS profilleri anonim okumaya açtığı için çalışır;
+    // güncel şemada RPC yolu kullanılır ve profil verisi açığa çıkmaz.
+    console.warn("[cloud] username RPC unavailable; using legacy profile lookup");
+    const { data: existing, error: fallbackError } = await STATE.client
+      .from("profiles")
+      .select("id")
+      .eq("username", username)
+      .maybeSingle();
+    if (fallbackError) throw fallbackError;
+    return !existing;
+  }
+
   async function register({ email, password, username, displayName }) {
     if (!STATE.client) throw new Error("Bulut yapılandırması yok");
     const un = String(username || "")
@@ -106,12 +137,7 @@
 
     try {
       // Önce username müsait mi?
-      const { data: available, error: checkErr } = await STATE.client
-        .rpc("is_username_available", { candidate_username: un });
-      if (checkErr) {
-        // Tablo yoksa / ağ hatası — anlamlı mesaj
-        throw checkErr;
-      }
+      const available = await usernameIsAvailable(un);
       if (!available) throw new Error("Bu kullanıcı adı alınmış");
     } catch (e) {
       throw new Error(friendlyNetworkError(e));
